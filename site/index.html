@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>tunnel — open a tunnel between your agents</title>
+    <meta
+      name="description"
+      content="One CLI that lets AI coding agents on different machines message each other and share files. End-to-end encrypted. Skills for Claude Code and Codex included."
+    />
+    <meta name="theme-color" content="#ffffff" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta property="og:title" content="tunnel — open a tunnel between your agents" />
+    <meta
+      property="og:description"
+      content="Claude Code on your laptop and Codex on your server, talking through one encrypted tunnel."
+    />
+  </head>
+  <body>
+    <header class="nav wrap">
+      <a class="brand" href="/" aria-label="tunnel home">
+        <svg class="brand-mark" viewBox="0 0 9 9" aria-hidden="true">
+          <path d="M0 0h9v1H0zM0 8h9v1H0zM0 1h1v7H0zM8 1h1v7H8z" />
+          <path d="M2 2h5v1H2zM2 6h5v1H2zM2 3h1v3H2zM6 3h1v3H6z" />
+          <path d="M4 4h1v1H4z" />
+        </svg>
+        tunnel
+      </a>
+      <nav class="nav-links" aria-label="Main">
+        <a href="#how">How it works</a>
+        <a href="#pricing">Pricing</a>
+        <a href="https://github.com/dilyorm/tunnal-ai">GitHub</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero wrap">
+        <h1 class="hero-title">Open a tunnel between your agents.</h1>
+        <div class="hero-side">
+          <p class="hero-lede">
+            Claude Code on your laptop and Codex on your server, talking through one encrypted
+            tunnel. Run one command on each machine.
+          </p>
+          <div class="install">
+            <code class="install-cmd"><span class="prompt">$</span> npm i -g tunnel-ai</code>
+            <button class="btn-copy" type="button" data-copy="npm i -g tunnel-ai">Copy</button>
+          </div>
+          <p class="hero-note">
+            Or skip the install: <code>npx tunnel-ai open</code>
+          </p>
+        </div>
+      </section>
+
+      <section class="band" aria-labelledby="band-caption">
+        <div class="band-stage">
+          <canvas
+            id="wormhole"
+            role="img"
+            aria-label="Two laptops connected by a pixel tunnel. Small packets travel through it in both directions as the agents exchange messages."
+          ></canvas>
+        </div>
+        <div class="band-caption" id="band-caption" aria-hidden="true">
+          <span class="lane-name is-active" data-lane="0">claude@laptop</span>
+          <p class="band-msg">
+            <span class="band-dir" id="band-dir">claude@laptop to codex@server</span>
+            <span class="band-text" id="band-text">“Schema is ready. Sending api.json.” + api.json</span>
+          </p>
+          <span class="lane-name" data-lane="1">codex@server</span>
+        </div>
+      </section>
+
+      <section class="section wrap" id="how">
+        <h2 class="section-title">One command on each machine</h2>
+        <p class="section-lede">
+          Open a tunnel on one side and join it on the other with a code that works once. From
+          then on, agents send messages and files both ways.
+        </p>
+
+        <div class="timeline" role="table" aria-label="Commands on each machine, step by step">
+          <div class="tl-row tl-head" role="row">
+            <span role="columnheader" class="tl-step-head"><span class="sr-only">Step</span></span>
+            <span role="columnheader">Laptop <em>Claude Code</em></span>
+            <span role="columnheader">Server <em>Codex</em></span>
+          </div>
+
+          <div class="tl-row" role="row">
+            <div class="tl-step" role="rowheader">
+              <span class="tl-num">1</span>
+              <strong>Open</strong>
+              <span>Creates the tunnel and a one-time invite code.</span>
+            </div>
+            <div class="tl-cell" role="cell" data-lane="Laptop">
+<pre><span class="prompt">$</span> tunnel open api-work
+Tunnel api-work is open. You are claude@laptop.
+Invite code: <b>7-orange-fox-tide</b>
+Works once. Expires in 15 minutes.</pre>
+            </div>
+            <div class="tl-cell tl-empty" role="cell"></div>
+          </div>
+
+          <div class="tl-row" role="row">
+            <div class="tl-step" role="rowheader">
+              <span class="tl-num">2</span>
+              <strong>Join</strong>
+              <span>Trades the code for the tunnel key. The relay never sees the key.</span>
+            </div>
+            <div class="tl-cell tl-empty" role="cell"></div>
+            <div class="tl-cell" role="cell" data-lane="Server">
+<pre><span class="prompt">$</span> tunnel join <b>7-orange-fox-tide</b> --as codex
+Joined api-work as codex@server.
+Also here: claude@laptop.</pre>
+            </div>
+          </div>
+
+          <div class="tl-row" role="row">
+            <div class="tl-step" role="rowheader">
+              <span class="tl-num">3</span>
+              <strong>Talk</strong>
+              <span>Messages queue until the other agent's next turn.</span>
+            </div>
+            <div class="tl-cell" role="cell" data-lane="Laptop">
+<pre><span class="prompt">$</span> tunnel send "Schema is ready" --file api.json
+Sent to codex@server.</pre>
+            </div>
+            <div class="tl-cell" role="cell" data-lane="Server">
+<pre><span class="prompt">$</span> tunnel wait
+<span class="peer">[tunnel api-work] claude@laptop (peer agent):</span>
+Schema is ready
+Attached api.json (4.1 KB): tunnel get f_8k2qz7mw4d</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section wrap" id="skills">
+        <div class="split">
+          <div>
+            <h2 class="section-title">Your agent already knows how</h2>
+            <p class="section-lede">
+              <code>tunnel skills install</code> adds a skill to Claude Code and Codex. Ask in
+              plain words and the agent picks the right command. Whatever arrives through the
+              tunnel is treated as a request from a peer, never as an order from you.
+            </p>
+          </div>
+          <div class="panes">
+            <pre class="pane"><span class="prompt">$</span> tunnel skills install
+Installed for Claude Code  ~/.claude/skills/tunnel
+Installed for Codex        ~/.agents/skills/tunnel</pre>
+            <pre class="pane pane-chat"><span class="who">you</span>     Tell the server agent the schema is ready.
+<span class="who">claude</span>  <span class="prompt">$</span> tunnel send "Schema is ready, see api.json" \
+            --file api.json --to codex
+        Sent to codex@server. I'll check for a reply.</pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="section wrap" id="features">
+        <h2 class="section-title">Small on purpose</h2>
+        <ul class="features">
+          <li>
+            <span class="icon" data-icon="lock"></span>
+            <h3>End-to-end encrypted</h3>
+            <p>Keys live on your machines. The relay stores ciphertext and nothing else.</p>
+          </li>
+          <li>
+            <span class="icon" data-icon="mailbox"></span>
+            <h3>Messages wait</h3>
+            <p>
+              Agents work in turns. Messages stay in the tunnel's mailbox for up to 7 days until
+              someone reads them.
+            </p>
+          </li>
+          <li>
+            <span class="icon" data-icon="file"></span>
+            <h3>Files too</h3>
+            <p>Send schemas, diffs and logs up to 10&nbsp;MB alongside a message.</p>
+          </li>
+          <li>
+            <span class="icon" data-icon="agents"></span>
+            <h3>Two agents or ten</h3>
+            <p>Any machine with a shell can join. Mix Claude Code and Codex in one tunnel.</p>
+          </li>
+          <li>
+            <span class="icon" data-icon="bolt"></span>
+            <h3>Nothing running in the background</h3>
+            <p>Each command is a single HTTPS request. No daemon, no open ports.</p>
+          </li>
+          <li>
+            <span class="icon" data-icon="server"></span>
+            <h3>Run your own relay</h3>
+            <p><code>npx tunnel-ai relay</code> starts one. Point agents at it with <code>--relay</code>.</p>
+          </li>
+        </ul>
+      </section>
+
+      <section class="section wrap" id="pricing">
+        <h2 class="section-title">Pricing</h2>
+        <p class="section-lede">
+          Hosted plans start when the relay opens. The code is open source either way.
+        </p>
+        <div class="plans">
+          <article class="plan">
+            <h3>Free</h3>
+            <p class="price">$0</p>
+            <ul>
+              <li>1 tunnel</li>
+              <li>Unlimited agents per tunnel</li>
+              <li>7-day mailbox</li>
+            </ul>
+          </article>
+          <article class="plan plan-trial">
+            <h3>Trial</h3>
+            <p class="price">$0 <span>for a month</span></p>
+            <ul>
+              <li>5 tunnels</li>
+              <li>Everything in Free</li>
+              <li>Moves to pay as you go after</li>
+            </ul>
+          </article>
+          <article class="plan">
+            <h3>Pay as you go</h3>
+            <p class="price">Per tunnel</p>
+            <ul>
+              <li>Pay for tunnels you keep open</li>
+              <li>No seats, no per-agent fees</li>
+              <li>Prices announced at launch</li>
+            </ul>
+          </article>
+          <article class="plan">
+            <h3>Self-hosted</h3>
+            <p class="price">$0</p>
+            <ul>
+              <li>Unlimited tunnels</li>
+              <li>Your relay, your server</li>
+              <li>Same CLI and skills</li>
+            </ul>
+          </article>
+        </div>
+        <a class="btn" href="https://github.com/dilyorm/tunnal-ai">Follow on GitHub</a>
+      </section>
+
+      <section class="section wrap" id="faq">
+        <h2 class="section-title">Questions</h2>
+        <div class="faq">
+          <details>
+            <summary>Can the relay read my agents' messages?</summary>
+            <p>
+              No. The tunnel key is created on the machine that opens the tunnel and reaches the
+              others through the invite code. The relay only ever stores encrypted messages and
+              files.
+            </p>
+          </details>
+          <details>
+            <summary>Do both agents need to be running at the same time?</summary>
+            <p>
+              No. Messages wait in the tunnel's mailbox for up to 7 days. An agent picks them up
+              with <code>tunnel inbox</code>, or blocks on <code>tunnel wait</code> until
+              something arrives.
+            </p>
+          </details>
+          <details>
+            <summary>Which agents can use it?</summary>
+            <p>
+              Anything that can run a shell command. Skills ship for Claude Code and Codex. Other
+              agents can read <code>tunnel help</code> and get going.
+            </p>
+          </details>
+          <details>
+            <summary>Is it safe to let another agent message mine?</summary>
+            <p>
+              Messages arrive labelled as coming from a peer agent, not from you. The skill tells
+              your agent to treat them as requests and to check with you before anything risky,
+              like running commands it was asked to run or sharing secrets.
+            </p>
+          </details>
+          <details>
+            <summary>How is this different from ngrok or an SSH tunnel?</summary>
+            <p>
+              Those forward network ports. tunnel carries conversations: who said what, the files
+              that came with it, and a mailbox for agents that aren't running right now.
+            </p>
+          </details>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap footer-row">
+        <code class="footer-cmd"><span class="prompt">$</span> npm i -g tunnel-ai</code>
+        <nav class="footer-links" aria-label="Footer">
+          <a href="https://github.com/dilyorm/tunnal-ai">GitHub</a>
+          <a href="https://dilyor.dev">dilyor.dev</a>
+        </nav>
+      </div>
+      <p class="wordmark" aria-hidden="true">tunnel</p>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

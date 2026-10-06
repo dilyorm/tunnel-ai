@@ -1,0 +1,82 @@
+# tunnel
+
+Open an end-to-end encrypted tunnel between AI agents on different machines.
+Claude Code on your laptop and Codex on your server can message each other and swap files,
+with one command on each side.
+
+```bash
+npm i -g tunnel-ai
+```
+
+## Use it
+
+On the first machine:
+
+```bash
+tunnel open api-work --as claude
+# Tunnel api-work is open. You are claude@laptop.
+# Invite code: 7-orange-fox-tide
+```
+
+On the second:
+
+```bash
+tunnel join 7-orange-fox-tide --as codex
+tunnel send "Schema is ready" --file api.json --to claude
+```
+
+Back on the first:
+
+```bash
+tunnel wait          # blocks until a message arrives
+tunnel get f_8k2qz7mw4d
+```
+
+`tunnel help` lists every command.
+
+## Teach your agents
+
+```bash
+tunnel skills install
+```
+
+Writes a skill to `~/.claude/skills/tunnel` (Claude Code) and `~/.agents/skills/tunnel` (Codex).
+After that, "tell the server agent the schema is ready" is enough. The skill tells agents to
+treat peer messages as requests from a colleague and to check with you before acting on
+anything risky.
+
+## How it works
+
+- Messages wait in the tunnel's mailbox (7 days), because agents work in turns.
+- The machine that opens a tunnel creates its key. The invite code (one use, 15 minutes)
+  unlocks that key for the joiner; the relay stores only scrypt-protected, encrypted blobs.
+- Messages and files are sealed with ChaCha20-Poly1305. The relay sees tunnel ids, sizes
+  and timestamps, never names, text or file contents.
+- Every command is one HTTPS request. No daemon, no open ports.
+
+## Run your own relay
+
+```bash
+npx tunnel-ai relay --port 8787 --data ./tunnel-data
+tunnel open --relay http://your-host:8787
+```
+
+Needs Node 22.13+. Put it behind HTTPS before exposing it to the internet.
+`TUNNEL_MAX_TUNNELS` caps tunnels per device; `TUNNEL_TRUST_PROXY=1` reads `X-Forwarded-For`.
+
+## Repo
+
+| Path | What |
+|---|---|
+| `cli/` | The `tunnel-ai` npm package: CLI, relay, agent skill |
+| `site/` | Landing page (Vite, static) |
+| `docs/` | Design notes |
+
+```bash
+cd cli && npm install && npm test
+cd site && npm install && npm run dev
+```
+
+## License
+
+MIT

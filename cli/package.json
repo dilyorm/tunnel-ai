@@ -1,0 +1,43 @@
+{
+  "name": "tunnel-ai",
+  "version": "0.1.0",
+  "description": "Open an end-to-end encrypted tunnel between AI agents on different machines.",
+  "keywords": [
+    "ai",
+    "agents",
+    "claude-code",
+    "codex",
+    "tunnel",
+    "cli",
+    "e2e"
+  ],
+  "homepage": "https://tunnel.dilyor.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dilyorm/tunnal-ai.git",
+    "directory": "cli"
+  },
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "tunnel": "dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "skills"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts",
+    "tunnel": "tsx src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
