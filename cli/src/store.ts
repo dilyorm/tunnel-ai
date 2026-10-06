@@ -29,10 +29,17 @@ export interface Config {
 }
 
 export class Store {
-  constructor(readonly dir: string) {}
+  #dir: string | undefined;
+
+  constructor(private readonly locate: () => string) {}
+
+  /** Resolved on first use, so `tunnel relay` runs under service users that have no home. */
+  get dir(): string {
+    return (this.#dir ??= this.locate());
+  }
 
   static fromEnv(env: NodeJS.ProcessEnv) {
-    return new Store(env.TUNNEL_HOME || join(homedir(), '.tunnel'));
+    return new Store(() => env.TUNNEL_HOME || join(homedir(), '.tunnel'));
   }
 
   private read<T>(file: string, fallback: T): T {

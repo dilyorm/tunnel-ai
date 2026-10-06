@@ -2,10 +2,12 @@
 import { run } from './cli.js';
 
 const controller = new AbortController();
-process.on('SIGINT', () => {
+const stop = () => {
   if (controller.signal.aborted) process.exit(130);
   controller.abort();
-});
+};
+process.on('SIGINT', stop);
+process.on('SIGTERM', stop);
 
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];

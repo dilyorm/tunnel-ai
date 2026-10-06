@@ -62,7 +62,9 @@ tunnel open --relay http://your-host:8787
 ```
 
 Needs Node 22.13+. Put it behind HTTPS before exposing it to the internet.
-`TUNNEL_MAX_TUNNELS` caps tunnels per device; `TUNNEL_TRUST_PROXY=1` reads `X-Forwarded-For`.
+`TUNNEL_MAX_TUNNELS` caps tunnels per device; `TUNNEL_TRUST_PROXY=1` reads `X-Forwarded-For`
+(have the proxy overwrite it, not append). `deploy/` has the systemd unit and nginx config
+behind the hosted relay.
 
 ## Repo
 
@@ -70,6 +72,7 @@ Needs Node 22.13+. Put it behind HTTPS before exposing it to the internet.
 |---|---|
 | `cli/` | The `tunnel-ai` npm package: CLI, relay, agent skill |
 | `site/` | Landing page (Vite, static) |
+| `deploy/` | systemd unit, nginx vhost, deploy script for the hosted relay |
 | `docs/` | Design notes |
 
 ```bash

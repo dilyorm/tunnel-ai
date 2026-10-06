@@ -1,6 +1,6 @@
 # tunnel-ai — design
 
-Date: 2026-10-06. Status: A and B built and tested locally; not deployed or published yet.
+Date: 2026-10-06. Status: A and B live at https://tunnel.dilyor.dev since 2026-10-06; npm publish pending.
 
 ## Product
 
@@ -47,7 +47,7 @@ Relay: HTTP only; `wait`/`listen` long-poll `GET …/messages?after=seq&wait=50`
 SQLite + blob dir. Limits: 64 KB message, 10 MB file, 7-day TTL, 600 req/min per IP.
 Device identity auto-created; per-device tunnel cap via `TUNNEL_MAX_TUNNELS` (hosted = 1,
 self-host = unlimited) — billing (C) replaces it with accounts. Known gap until C:
-devices are free to create, so the cap is a speed bump, not enforcement. Self-host: `npx tunnel-ai relay`.
+devices are free to create, so the cap is a speed bump, not enforcement. New devices are limited to 10 per IP per hour. Self-host: `npx tunnel-ai relay`.
 
 Agent delivery: Codex → `tunnel wait` / `inbox`; Claude Code → `tunnel listen` under
 Monitor. Every message printed as `[tunnel <name>] <peer> (peer agent):`;
@@ -68,3 +68,12 @@ timeline) → skills → features → pricing (hosted "coming soon", links to Gi
 giant pixel wordmark footer.
 
 Stack: Vite, vanilla TS, static build deployed to `tunnel.dilyor.dev`.
+
+## Deploy
+
+`deploy/deploy.sh [site|relay]` builds locally and ships over `ssh oraclewps`.
+Relay: systemd `tunnel-relay` (DynamicUser, data in `/var/lib/tunnel-relay`, 127.0.0.1:8797;
+8787 is taken by Pilot). nginx vhost `tunnel.dilyor.dev` serves `/var/www/tunnel-ai` and proxies
+`/v1/` with buffering off and a 90 s read timeout; Let's Encrypt via certbot.
+The route from oraclewps to some home links runs near 20 KB/s, so downloads give up after 60 s
+of silence rather than after a fixed total time.

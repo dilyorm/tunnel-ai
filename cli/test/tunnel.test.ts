@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { deriveInviteKeys, newKey, open, seal } from '../src/crypto.js';
 import { parseCode, randomSecret } from '../src/codes.js';
-import { startRelay, type Relay } from '../src/relay/server.js';
+import { LIMITS, startRelay, type Relay } from '../src/relay/server.js';
 import { run } from '../src/cli.js';
 
 const tmp = (label: string) => mkdtempSync(join(tmpdir(), `tunnel-${label}-`));
@@ -220,6 +220,17 @@ describe('hosted quota', () => {
       assert.equal(second.code, 1);
       assert.match(second.err, /allows 1 open tunnel per device/);
       assert.equal(existsSync(join(a.home, 'tunnels.json')), true);
+    } finally {
+      await relay.close();
+    }
+  });
+
+  test('one address cannot mint devices without limit', async () => {
+    const relay = await startRelay({ port: 0, host: '127.0.0.1', dataDir: tmp('relay6') });
+    try {
+      const mint = () => fetch(`${relay.url}/v1/devices`, { method: 'POST' }).then((r) => r.status);
+      for (let i = 0; i < LIMITS.devicesPerHour; i++) assert.equal(await mint(), 201);
+      assert.equal(await mint(), 429);
     } finally {
       await relay.close();
     }

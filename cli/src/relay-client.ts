@@ -1,6 +1,9 @@
 import { TunnelError } from './errors.js';
 import { VERSION } from './version.js';
 
+/** A download gives up after this long without receiving a byte. */
+const STALL_MS = 60_000;
+
 /** Thin HTTP client for the relay API. Every failure becomes a readable TunnelError. */
 export class RelayClient {
   constructor(
@@ -27,8 +30,9 @@ export class RelayClient {
       headers['content-type'] = 'application/octet-stream';
       body = new Uint8Array(init.body);
     }
-    const timeout = AbortSignal.timeout(init.timeoutMs ?? 30_000);
-    const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
+    // timeoutMs 0 means the caller enforces its own deadline through `signal`.
+    const timeout = init.timeoutMs === 0 ? undefined : AbortSignal.timeout(init.timeoutMs ?? 30_000);
+    const signal = AbortSignal.any([init.signal, timeout].filter((s): s is AbortSignal => s !== undefined));
 
     let res: Response;
     try {
@@ -62,12 +66,37 @@ export class RelayClient {
   }
 
   async upload<T>(path: string, data: Buffer) {
-    const res = await this.request('POST', path, { body: data, timeoutMs: 120_000 });
+    // Allow for links as slow as 16 KB/s: 10 MB gets about 12 minutes.
+    const res = await this.request('POST', path, { body: data, timeoutMs: 60_000 + Math.ceil(data.length / 16) });
     return (await res.json()) as T;
   }
 
   async download(path: string): Promise<Buffer> {
-    const res = await this.request('GET', path, { timeoutMs: 120_000 });
-    return Buffer.from(await res.arrayBuffer());
+    // A big file on a slow link can take minutes, so give up on silence, not on total time.
+    const stall = new AbortController();
+    let timer = setTimeout(() => stall.abort(), STALL_MS);
+    const kick = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => stall.abort(), STALL_MS);
+    };
+    try {
+      const res = await this.request('GET', path, { signal: stall.signal, timeoutMs: 0 });
+      if (!res.body) return Buffer.alloc(0);
+      const chunks: Buffer[] = [];
+      const reader = res.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return Buffer.concat(chunks);
+        chunks.push(Buffer.from(value));
+        kick();
+      }
+    } catch (error) {
+      if (error instanceof TunnelError) throw error;
+      throw new TunnelError(
+        `The download from ${this.base} stalled for ${STALL_MS / 1000}s. Run the same command again to retry.`,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }

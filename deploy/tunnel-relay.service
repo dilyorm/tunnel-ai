@@ -1,0 +1,36 @@
+# /etc/systemd/system/tunnel-relay.service
+# The hosted relay behind https://tunnel.dilyor.dev. nginx terminates TLS and proxies /v1/ here.
+
+[Unit]
+Description=tunnel-ai relay
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node /opt/tunnel-ai/dist/bin.js relay
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=8797
+Environment=TUNNEL_DATA=/var/lib/tunnel-relay
+Environment=TUNNEL_MAX_TUNNELS=1
+# nginx overwrites X-Forwarded-For with the real client address.
+Environment=TUNNEL_TRUST_PROXY=1
+Restart=always
+RestartSec=2
+
+DynamicUser=yes
+StateDirectory=tunnel-relay
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

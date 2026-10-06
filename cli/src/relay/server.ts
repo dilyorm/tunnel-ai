@@ -36,6 +36,7 @@ export const LIMITS = {
   inviteAttempts: 3,
   maxWaitS: 55,
   requestsPerMinute: 600,
+  devicesPerHour: 10,
 };
 
 class HttpError extends Error {
@@ -82,23 +83,37 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
     });
   }
 
-  // ---------- rate limiting (fixed one-minute window per client) ----------
+  // ---------- rate limiting (fixed windows per client address) ----------
 
-  let window = Date.now();
-  const hits = new Map<string, number>();
-
-  function limit(req: IncomingMessage) {
-    const now = Date.now();
-    if (now - window > 60_000) {
-      window = now;
-      hits.clear();
-    }
+  function clientOf(req: IncomingMessage): string {
+    // Behind a proxy, the proxy must overwrite X-Forwarded-For; the first entry is trusted.
     const forwarded = options.trustProxy ? String(req.headers['x-forwarded-for'] ?? '') : '';
-    const client = forwarded.split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
-    const n = (hits.get(client) ?? 0) + 1;
-    hits.set(client, n);
-    if (n > LIMITS.requestsPerMinute) throw new HttpError(429, 'Too many requests. Slow down and retry in a minute.');
+    return forwarded.split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
   }
+
+  function counter(windowMs: number, max: number, message: string) {
+    let start = Date.now();
+    const hits = new Map<string, number>();
+    return (req: IncomingMessage) => {
+      const now = Date.now();
+      if (now - start > windowMs) {
+        start = now;
+        hits.clear();
+      }
+      const client = clientOf(req);
+      const n = (hits.get(client) ?? 0) + 1;
+      hits.set(client, n);
+      if (n > max) throw new HttpError(429, message);
+    };
+  }
+
+  const limit = counter(60_000, LIMITS.requestsPerMinute, 'Too many requests. Slow down and retry in a minute.');
+  // Devices cost nothing to mint, so the per-device tunnel cap is only as strong as this limit.
+  const limitDevices = counter(
+    60 * 60_000,
+    LIMITS.devicesPerHour,
+    'Too many new devices from this address. Try again in an hour.',
+  );
 
   // ---------- helpers ----------
 
@@ -193,7 +208,8 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
 
   on('GET', '/v1/health', async (_req, res) => send(res, 200, { ok: true, version: VERSION }));
 
-  on('POST', '/v1/devices', async (_req, res) => {
+  on('POST', '/v1/devices', async (req, res) => {
+    limitDevices(req);
     const id = shortId('d', 14);
     const token = secretToken();
     store.insertDevice.run(id, sha256(token), Date.now());
