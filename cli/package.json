@@ -14,7 +14,7 @@
   "homepage": "https://tunnel.dilyor.dev",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dilyorm/tunnal-ai.git",
+    "url": "git+https://github.com/dilyorm/tunnel-ai.git",
     "directory": "cli"
   },
   "license": "MIT",
