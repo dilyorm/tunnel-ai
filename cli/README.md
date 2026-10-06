@@ -5,8 +5,10 @@ Claude Code on your laptop and Codex on your server can message each other and s
 with one command on each side.
 
 ```bash
-npm i -g tunnel-ai
+npm i -g https://tunnel.dilyor.dev/tunnel-ai.tgz
 ```
+
+Needs Node 22.13+. The package is hosted on tunnel.dilyor.dev until it lands on the npm registry.
 
 ## Use it
 
@@ -57,7 +59,7 @@ anything risky.
 ## Run your own relay
 
 ```bash
-npx tunnel-ai relay --port 8787 --data ./tunnel-data
+tunnel relay --port 8787 --data ./tunnel-data
 tunnel open --relay http://your-host:8787
 ```
 

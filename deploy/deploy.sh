@@ -13,6 +13,11 @@ what="${1:-all}"
 
 if [[ "$what" == all || "$what" == site ]]; then
   (cd "$ROOT/site" && npm run build)
+  # The CLI package rides along, so `npm i -g https://tunnel.dilyor.dev/tunnel-ai.tgz` works
+  # without the npm registry. tunnel-ai.tgz is the latest; the versioned file stays pinned.
+  (cd "$ROOT/cli" && npm run build >/dev/null && npm pack --silent --pack-destination ../site/dist >/dev/null)
+  version="$(cd "$ROOT/cli" && node -p 'require("./package.json").version')"
+  cp "$ROOT/site/dist/tunnel-ai-$version.tgz" "$ROOT/site/dist/tunnel-ai.tgz"
   tar -C "$ROOT/site/dist" -czf - . | ssh "$HOST" '
     set -e
     sudo rm -rf /var/www/tunnel-ai.new && sudo mkdir -p /var/www/tunnel-ai.new

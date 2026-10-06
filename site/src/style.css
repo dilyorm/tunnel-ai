@@ -213,24 +213,31 @@ pre {
   color: var(--paper);
   clip-path: var(--pixel-corners);
   max-width: 100%;
+  /* When the URL part no longer fits beside it, Copy drops to its own row. */
+  flex-wrap: wrap;
 }
 
 .install-cmd {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 0.6em;
-  padding: 16px 20px 16px 22px;
-  font-size: 1rem;
+  padding: 16px 16px 16px 20px;
+  font-size: 0.875rem;
+  min-width: 0;
+  flex: 999 1 17rem;
+}
+
+/* A long command wraps only between its parts, at the <wbr> and spaces. */
+.cmd > span {
   white-space: nowrap;
-  overflow-x: auto;
 }
 
 .btn-copy {
-  flex: none;
+  flex: 1 0 auto;
   border: 0;
   margin: 6px;
-  padding: 0 18px;
-  min-width: 5.5rem;
+  padding: 12px 18px;
+  min-width: 5rem;
   background: var(--signal);
   color: var(--paper);
   font: 500 0.875rem/1 var(--sans);
@@ -787,7 +794,6 @@ pre {
   }
 
   .install-cmd {
-    flex: 1;
     padding-inline: 16px;
   }
 }

@@ -1,6 +1,8 @@
 # tunnel-ai — design
 
-Date: 2026-10-06. Status: A and B live at https://tunnel.dilyor.dev since 2026-10-06; npm publish pending.
+Date: 2026-10-06. Status: A and B live at https://tunnel.dilyor.dev since 2026-10-06. npm registry publish blocked
+until ~2026-10-09 (2FA recovery hold); meanwhile the package is served at
+https://tunnel.dilyor.dev/tunnel-ai.tgz by `deploy.sh site`.
 
 ## Product
 
