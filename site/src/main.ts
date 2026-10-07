@@ -81,6 +81,70 @@ document.querySelectorAll<HTMLElement>('[data-icon]').forEach((el) => {
   if (rows) el.innerHTML = pixelIcon(rows);
 });
 
+// ---------- install tabs ----------
+
+// Each command is [program, host, rest]; it may wrap only between the three.
+const INSTALLS: Record<string, { prompt: string; parts: [string, string, string]; note: string }> = {
+  unix: {
+    prompt: '$',
+    parts: ['curl -fsSL', 'https://tunnel.dilyor.dev/', 'install.sh | sh'],
+    note: 'Installs to ~/.tunnel. Brings its own Node if yours is older than 22.13.',
+  },
+  windows: {
+    prompt: '>',
+    parts: ['irm', 'https://tunnel.dilyor.dev/', 'install.ps1 | iex'],
+    note: 'Run in PowerShell. Installs to ~\\.tunnel and brings its own Node if yours is older than 22.13.',
+  },
+  npm: {
+    prompt: '$',
+    parts: ['npm i -g', 'https://tunnel.dilyor.dev/', 'tunnel-ai.tgz'],
+    note: 'Needs Node 22.13 or newer. Hosted here until the npm release.',
+  },
+};
+
+const tabs = [...document.querySelectorAll<HTMLButtonElement>('[data-install]')];
+const panel = document.getElementById('install');
+
+function pickInstall(tab: HTMLButtonElement, focus = false) {
+  const install = INSTALLS[tab.dataset.install!];
+  if (!install || !panel) return;
+  for (const t of tabs) {
+    const on = t === tab;
+    t.setAttribute('aria-selected', String(on));
+    t.tabIndex = on ? 0 : -1;
+  }
+  if (focus) tab.focus();
+  panel.setAttribute('aria-labelledby', tab.id);
+  const [program, host, rest] = install.parts;
+  const cmd = panel.querySelector('.cmd')!;
+  cmd.replaceChildren(span(program), ' ', span(host), document.createElement('wbr'), span(rest));
+  panel.querySelector('.prompt')!.textContent = install.prompt;
+  panel.querySelector<HTMLButtonElement>('[data-copy]')!.dataset.copy = `${program} ${host}${rest}`;
+  const note = document.querySelector('.hero-note');
+  if (note) note.textContent = install.note;
+}
+
+function span(text: string) {
+  const el = document.createElement('span');
+  el.textContent = text;
+  return el;
+}
+
+tabs.forEach((tab, i) => {
+  tab.addEventListener('click', () => pickInstall(tab));
+  tab.addEventListener('keydown', (e) => {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    pickInstall(tabs[(i + step + tabs.length) % tabs.length], true);
+  });
+});
+
+if (/Windows/i.test(navigator.userAgent)) {
+  const windows = tabs.find((t) => t.dataset.install === 'windows');
+  if (windows) pickInstall(windows);
+}
+
 // ---------- copy buttons ----------
 
 document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((btn) => {

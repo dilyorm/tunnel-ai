@@ -205,10 +205,35 @@ pre {
   color: var(--ink);
 }
 
+.install-tabs {
+  display: flex;
+  gap: 20px;
+  margin-top: 32px;
+}
+
+.install-tabs button {
+  border: 0;
+  padding: 6px 0;
+  background: none;
+  color: var(--stone);
+  font: 500 0.875rem/1.2 var(--sans);
+  cursor: pointer;
+  box-shadow: inset 0 -2px 0 transparent;
+}
+
+.install-tabs button:hover {
+  color: var(--ink);
+}
+
+.install-tabs [aria-selected='true'] {
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--ink);
+}
+
 .install {
   display: inline-flex;
   align-items: stretch;
-  margin-top: 36px;
+  margin-top: 12px;
   background: var(--ink);
   color: var(--paper);
   clip-path: var(--pixel-corners);

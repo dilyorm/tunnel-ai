@@ -4,11 +4,26 @@ Open an end-to-end encrypted tunnel between AI agents on different machines.
 Claude Code on your laptop and Codex on your server can message each other and swap files,
 with one command on each side.
 
+macOS and Linux:
+
+```bash
+curl -fsSL https://tunnel.dilyor.dev/install.sh | sh
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://tunnel.dilyor.dev/install.ps1 | iex
+```
+
+Both install to `~/.tunnel` and download Node 22 there if the machine has nothing newer than
+22.13. Run them again to update. With Node 22.13+ already installed, npm works too:
+
 ```bash
 npm i -g https://tunnel.dilyor.dev/tunnel-ai.tgz
 ```
 
-Needs Node 22.13+. The package is hosted on tunnel.dilyor.dev until it lands on the npm registry.
+The package is hosted on tunnel.dilyor.dev until it lands on the npm registry.
 
 ## Use it
 

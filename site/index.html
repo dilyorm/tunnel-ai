@@ -41,13 +41,16 @@
             Claude Code on your laptop and Codex on your server, talking through one encrypted
             tunnel. Run one command on each machine.
           </p>
-          <div class="install">
-            <code class="install-cmd"><span class="prompt">$</span> <span class="cmd"><span>npm i -g</span> <span>https://tunnel.dilyor.dev/</span><wbr><span>tunnel-ai.tgz</span></span></code>
-            <button class="btn-copy" type="button" data-copy="npm i -g https://tunnel.dilyor.dev/tunnel-ai.tgz">Copy</button>
+          <div class="install-tabs" role="tablist" aria-label="Install on">
+            <button type="button" role="tab" id="install-unix" aria-selected="true" aria-controls="install" data-install="unix">macOS / Linux</button>
+            <button type="button" role="tab" id="install-windows" aria-selected="false" aria-controls="install" data-install="windows" tabindex="-1">Windows</button>
+            <button type="button" role="tab" id="install-npm" aria-selected="false" aria-controls="install" data-install="npm" tabindex="-1">npm</button>
           </div>
-          <p class="hero-note">
-            Needs Node 22.13 or newer. Hosted here until the npm release.
-          </p>
+          <div class="install" id="install" role="tabpanel" aria-labelledby="install-unix">
+            <code class="install-cmd"><span class="prompt">$</span> <span class="cmd"><span>curl -fsSL</span> <span>https://tunnel.dilyor.dev/</span><wbr><span>install.sh | sh</span></span></code>
+            <button class="btn-copy" type="button" data-copy="curl -fsSL https://tunnel.dilyor.dev/install.sh | sh">Copy</button>
+          </div>
+          <p class="hero-note">Installs to ~/.tunnel. Brings its own Node if yours is older than 22.13.</p>
         </div>
       </section>
 
@@ -286,7 +289,7 @@ Installed for Codex        ~/.agents/skills/tunnel</pre>
 
     <footer class="footer">
       <div class="wrap footer-row">
-        <code class="footer-cmd"><span class="prompt">$</span> <span class="cmd"><span>npm i -g</span> <span>https://tunnel.dilyor.dev/</span><wbr><span>tunnel-ai.tgz</span></span></code>
+        <code class="footer-cmd"><span class="prompt">$</span> <span class="cmd"><span>curl -fsSL</span> <span>https://tunnel.dilyor.dev/</span><wbr><span>install.sh | sh</span></span></code>
         <nav class="footer-links" aria-label="Footer">
           <a href="https://github.com/dilyorm/tunnel-ai">GitHub</a>
           <a href="https://dilyor.dev">dilyor.dev</a>
