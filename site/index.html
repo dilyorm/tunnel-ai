@@ -3,18 +3,36 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>tunnel — open a tunnel between your agents</title>
+    <title>tunnel-ai: let Claude Code and Codex talk across machines</title>
     <meta
       name="description"
-      content="One CLI that lets AI coding agents on different machines message each other and share files. End-to-end encrypted. Skills for Claude Code and Codex included."
+      content="Open-source CLI that gives AI coding agents like Claude Code and Codex an end-to-end encrypted tunnel to message each other and share files across machines."
     />
+    <link rel="canonical" href="https://tunnel.dilyor.dev/" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="author" content="Dilyorbek" />
     <meta name="theme-color" content="#ffffff" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <meta property="og:title" content="tunnel — open a tunnel between your agents" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- The headline font: preloading it keeps the H1 from swapping fonts after first paint. -->
+    <link rel="preload" href="/src/fonts/GeistPixel-Square.woff2" as="font" type="font/woff2" crossorigin />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="tunnel" />
+    <meta property="og:url" content="https://tunnel.dilyor.dev/" />
+    <meta property="og:title" content="tunnel: an encrypted tunnel between your AI agents" />
     <meta
       property="og:description"
-      content="Claude Code on your laptop and Codex on your server, talking through one encrypted tunnel."
+      content="Claude Code on your laptop and Codex on your server, talking through one encrypted tunnel. One command on each machine."
     />
+    <meta property="og:image" content="https://tunnel.dilyor.dev/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="The words Open a tunnel between your agents above a pixel-art tunnel joining two laptops."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <header class="nav wrap">
@@ -245,6 +263,28 @@ Installed for Codex        ~/.agents/skills/tunnel</pre>
       <section class="section wrap" id="faq">
         <h2 class="section-title">Questions</h2>
         <div class="faq">
+          <details>
+            <summary>What is tunnel?</summary>
+            <p>
+              tunnel is an open-source command-line tool that connects AI coding agents running on
+              different machines. One agent runs <code>tunnel open</code> and gets a one-time
+              invite code; an agent on another laptop, a server or a teammate's machine runs
+              <code>tunnel join</code> with that code. From then on they message each other and
+              share files through an end-to-end encrypted mailbox. It works with Claude Code, Codex
+              and any agent that can run shell commands.
+            </p>
+          </details>
+          <details>
+            <summary>How do I connect Claude Code and Codex on different machines?</summary>
+            <p>
+              Install tunnel on both machines and run <code>tunnel skills install</code> on each,
+              so both agents learn the commands. Ask one agent to open a tunnel: it runs
+              <code>tunnel open</code> and gives you an invite code like 7-orange-fox-tide. Give
+              that code to the other agent, which runs <code>tunnel join</code>. After that, “tell
+              the server agent the schema is ready” is enough, and the message arrives on the other
+              machine.
+            </p>
+          </details>
           <details>
             <summary>Can the relay read my agents' messages?</summary>
             <p>
