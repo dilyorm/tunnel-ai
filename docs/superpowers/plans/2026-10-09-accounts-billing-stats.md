@@ -63,6 +63,10 @@
 20. **The charts are written out in Task 12** (inline SVG, no library) instead of being designed at implementation time.
 21. **Active accounts** also count accounts that used the site in the window, not only those with an active linked machine.
 22. **Two additions for building the site:** `site/scripts/check.mjs` (`npm run check`) inspects the built pages and is the site tasks' failing test; `cli/scripts/dev-relay.ts` (`npm run dev-relay`) runs a relay with every feature on and email and payments faked, so the account and admin pages can be tried in a browser.
+23. **`tunnel login` opens the browser on Windows with `rundll32 url.dll,FileProtocolHandler`**, because `start` is a cmd builtin, not a program.
+24. **`tunnel account` on a machine that isn't linked** prints "Not signed in (Free plan). Run `tunnel login` to link this machine to an account." and then the Free limits, so the person sees what they have now.
+25. **Upgrade buttons and checkout are offered only while no subscription is live.** A Plus customer moves to Pro through Manage billing (Review Focus 4).
+26. **"Manage billing" shows only while a subscription is live.** After a cancelled plan has ended there is nothing left to manage, and Lemon Squeezy emails every receipt and invoice.
 
 ## File map
 
@@ -134,7 +138,7 @@ export interface Relay { url: string; sweep(): Promise<void>; close(): Promise<v
   - `tunnels.ts`: `tunnelRoutes(app: App, options: { ttlMs: number }): { wakeAll(): void }`.
   - `server.ts`: `App` (fields marked [1] above), `startRelay`, `RelayOptions`, `Relay`, and `export { LIMITS } from './http.js'`.
 
-This task is a pure move. The existing suite already covers every route, so "the failing test" step is replaced by running it before and after.
+This task is a pure move, with one deliberate change: `json()` answers 400 "Body must be a JSON object." for a body that is valid JSON but not an object (today `null` or `5` reaches a handler and becomes a 500). The existing suite already covers every route, so "the failing test" step is replaced by running it before and after.
 
 - [ ] **Step 1: Run the existing suite to record the baseline**
 
@@ -1255,10 +1259,9 @@ In the `app` literal, add the four fields and replace `device`:
 
 - [ ] **Step 7: Pass the environment from `relayCmd` in `cli/src/commands.ts`**
 
-In `relayCmd`, add two options to the `startRelay({ … })` call:
+In `relayCmd`, add two options to the `startRelay({ … })` call, next to the `trustProxy` line that is already there:
 
 ```ts
-    trustProxy: ctx.env.TUNNEL_TRUST_PROXY === '1',
     env: ctx.env,
     log: (line) => ctx.err(line),
 ```
@@ -1266,7 +1269,7 @@ In `relayCmd`, add two options to the `startRelay({ … })` call:
 - [ ] **Step 8: Run the new test and the whole suite**
 
 Run: `cd cli && node --import tsx --test test/setup.test.ts && npm test && npm run typecheck`
-Expected: setup tests PASS (10 tests); full suite `# fail 0`; no type errors.
+Expected: setup tests PASS (9 tests); full suite `# fail 0`; no type errors.
 
 - [ ] **Step 9: Commit**
 
@@ -1958,7 +1961,7 @@ At the top of the request handler's `catch (error) {` block, before the `headers
       if (!req.complete) req.resume();
 ```
 
-Replace the two timeout lines under `createServer` with:
+Replace the comment and the two timeout lines under `createServer` (`// long-polls hold requests open…`, `server.requestTimeout = …` and `server.keepAliveTimeout = 65_000;`) with:
 
 ```ts
   // A 100 MB upload on a slow link can take many minutes, so there is no total request time limit.
@@ -1981,13 +1984,13 @@ In `cli/src/commands.ts`, delete `const MAX_FILE_BYTES = 10 * 1024 * 1024;` and,
 In `cli/src/cli.ts`, change the `tunnel send` line of `HELP` to:
 
 ```
-  tunnel send "text" [--to name] [--file path]...   Send a message, with files up to your plan's size
+  tunnel send "text" [--to name] [--file path]...   Send a message, with files up to your plan's size limit
 ```
 
 - [ ] **Step 10: Run the tests and the type check**
 
 Run: `cd cli && node --import tsx --test test/plans.test.ts && npm test && npm run typecheck`
-Expected: plans tests PASS (12 tests); full suite `# fail 0` (the original 19 included); no type errors.
+Expected: plans tests PASS (11 tests); full suite `# fail 0` (the original 19 included); no type errors.
 
 - [ ] **Step 11: Commit**
 
@@ -5095,7 +5098,7 @@ if (has('index.html')) {
   if (blocks.length === 1) {
     const graph = JSON.parse(blocks[0][1])['@graph'];
     const app = graph.find((node) => node['@type'] === 'SoftwareApplication');
-    const prices = (app?.offers ?? []).map((offer) => offer.price).join(', ');
+    const prices = [].concat(app?.offers ?? []).map((offer) => offer.price).join(', ');
     expect(prices === '0, 5, 9', `offers are priced [${prices}], expected [0, 5, 9]`);
     const faq = graph.find((node) => node['@type'] === 'FAQPage');
     const shown = index.match(/<details>/g)?.length ?? 0;
@@ -7558,7 +7561,6 @@ git commit -m "feat(site): admin page with daily charts, active users, plans and
 - Modify: `deploy/nginx.conf`
 - Modify: `deploy/deploy.sh` (the site step runs the check)
 - Modify: `README.md`, then copy it to `cli/README.md` (the two are identical today)
-- Modify: `cli/src/cli.ts` (the `send` help line)
 
 **Interfaces:**
 - Consumes: the variable names in `relay/config.ts` (Task 2); `GET /internal/install?f=` and `installMetric` (Task 4), which counts `/install.sh`, `/install.ps1` and `/tunnel-ai[-version].tgz` fetched by npm; the site pages from Tasks 10–12; `npm run check` (Task 10); `npm run dev-relay` (Task 11).
@@ -7586,14 +7588,13 @@ for v in TUNNEL_PUBLIC_URL GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET RESEND_API_KEY 
   grep -q "^$v=" deploy/tunnel-relay.env.example 2>/dev/null || { echo "missing in env example: $v"; fail=1; }
 done
 check README.md '## Plans'
-check cli/src/cli.ts "Send a message, with files up to your plan's size limit"
 cmp -s README.md cli/README.md || { echo "cli/README.md differs from README.md"; fail=1; }
 [ "$fail" = 0 ] && echo "deploy files OK"
 ```
 
 - [ ] **Step 2: Run it to see it fail**
 
-Expected: a `missing in …` line for every `check` and for all 12 variables (the example file doesn't exist yet), and no `deploy files OK`. The README copy check passes for now; the two files are identical until Step 8.
+Expected: a `missing in …` line for every `check` and for all 12 variables (the example file doesn't exist yet), and no `deploy files OK`. The README copy check passes for now; the two files are identical until Step 7.
 
 - [ ] **Step 3: Load the settings file from systemd, in `deploy/tunnel-relay.service`**
 
@@ -7707,6 +7708,8 @@ server {
         proxy_pass_request_body off;
         proxy_set_header Content-Length "";
         proxy_set_header User-Agent $http_user_agent;
+        # Overwrite, never append, as in /v1/: the relay rate-limits by this header.
+        proxy_set_header X-Forwarded-For $remote_addr;
     }
 
     location /v1/ {
@@ -7747,21 +7750,7 @@ with
   (cd "$ROOT/site" && npm run build && npm run check)
 ```
 
-- [ ] **Step 7: Update the CLI's `send` help line, in `cli/src/cli.ts`**
-
-Replace
-
-```
-  tunnel send "text" [--to name] [--file path]...   Send a message (and files, up to 10 MB each)
-```
-
-with
-
-```
-  tunnel send "text" [--to name] [--file path]...   Send a message, with files up to your plan's size limit
-```
-
-- [ ] **Step 8: Document plans and self-hosted settings, in `README.md`**
+- [ ] **Step 7: Document plans and self-hosted settings, in `README.md`**
 
 After the `## Teach your agents` section (before `## How it works`), add:
 
@@ -7833,23 +7822,23 @@ Then make the package README match:
 cp README.md cli/README.md
 ```
 
-- [ ] **Step 9: Run the check, the tests and the builds**
+- [ ] **Step 8: Run the check, the tests and the builds**
 
 Run the Step 1 check again. Expected: `deploy files OK`.
 
 Run: `cd cli && npm test && npm run typecheck && cd ../site && npm run build && npm run check`
 Expected: `# fail 0`, no type errors, `Site check passed: 6 pages.`
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add deploy/tunnel-relay.service deploy/tunnel-relay.env.example deploy/nginx.conf deploy/deploy.sh README.md cli/README.md cli/src/cli.ts
+git add deploy/tunnel-relay.service deploy/tunnel-relay.env.example deploy/nginx.conf deploy/deploy.sh README.md cli/README.md
 git commit -m "chore(deploy): settings file, clean page URLs, install counting, 100 MB uploads; document plans" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 #### Part B: going live (ask first)
 
-- [ ] **Step 11: Ask the user before touching the server**
+- [ ] **Step 10: Ask the user before touching the server**
 
 Nothing below runs until the user answers yes in chat. Ask:
 
@@ -7863,7 +7852,7 @@ These have to be done by the owner beforehand, outside the chat. Secret values g
 4. `TUNNEL_ADMIN_EMAILS` set to the owner's email, and `TUNNEL_STATS_SALT` from `openssl rand -hex 32`.
 5. A mailbox that receives `tunnel@dilyor.dev`, the contact address on the legal pages.
 
-- [ ] **Step 12: Back up the relay's data**
+- [ ] **Step 11: Back up the relay's data**
 
 ```bash
 ssh oraclewps 'sudo systemctl stop tunnel-relay && sudo tar -C /var/lib/private -czf ~/tunnel-relay-backup-$(date +%F).tgz tunnel-relay; sudo systemctl start tunnel-relay'
@@ -7872,7 +7861,7 @@ ssh oraclewps 'ls -l ~/tunnel-relay-backup-*.tgz'
 
 Expected: a backup file a few MB or smaller. (The relay starts again even if `tar` fails.)
 
-- [ ] **Step 13: Install the settings file without reading it**
+- [ ] **Step 12: Install the settings file without reading it**
 
 Copy the owner's file as-is. Never `cat` it or print values; the last command prints only the variable names, and then the ones still empty.
 
@@ -7884,7 +7873,7 @@ ssh oraclewps 'sudo grep -o "^[A-Z_]*=" /etc/tunnel-relay.env; echo "empty:"; su
 
 Expected: all 12 names, and nothing under `empty:`. If something is empty, stop and tell the owner which name.
 
-- [ ] **Step 14: Deploy the relay and the site**
+- [ ] **Step 13: Deploy the relay and the site**
 
 ```bash
 deploy/deploy.sh
@@ -7898,7 +7887,7 @@ ssh oraclewps 'sudo journalctl -u tunnel-relay -n 40 --no-pager'
 
 Expected: no line containing `is off` (each one names a missing variable).
 
-- [ ] **Step 15: Edit the live nginx file, showing the diff first**
+- [ ] **Step 14: Edit the live nginx file, showing the diff first**
 
 Certbot owns the live file, so apply this task's nginx changes to it by hand instead of replacing it:
 
@@ -7929,7 +7918,7 @@ ssh oraclewps 'sudo install -m 644 /tmp/tunnel.nginx.conf /etc/nginx/sites-avail
 
 Expected: `nginx reloaded`.
 
-- [ ] **Step 16: Smoke checks**
+- [ ] **Step 15: Smoke checks**
 
 ```bash
 curl -fsS https://tunnel.dilyor.dev/v1/health
@@ -7941,7 +7930,7 @@ curl -fsS https://tunnel.dilyor.dev/sitemap.xml
 curl -fsS -o /dev/null https://tunnel.dilyor.dev/install.sh && echo "install.sh fetched"
 ```
 
-Expected: `{"ok":true,…}`; `{"github":true,"email":true,"billing":true}`; `HTTP/2 200` twice; robots with `Disallow: /account` and `Disallow: /admin`; a sitemap with the landing page and the three legal pages; `install.sh fetched` (it counts as one install today; Step 17 checks that).
+Expected: `{"ok":true,…}`; `{"github":true,"email":true,"billing":true}`; `HTTP/2 200` twice; robots with `Disallow: /account` and `Disallow: /admin`; a sitemap with the landing page and the three legal pages; `install.sh fetched` (it counts as one install today; Step 16 checks that).
 
 Then a real tunnel against the hosted relay, from `cli/` in Git Bash:
 
@@ -7952,13 +7941,13 @@ npx tsx src/bin.ts open deploy-check && npx tsx src/bin.ts send "deploy check" &
 
 Expected: `Tunnel deploy-check is open…`, the message sends, and `Closed deploy-check. Its messages and files were deleted from the relay.`
 
-- [ ] **Step 17: Hand the browser checks to the owner**
+- [ ] **Step 16: Hand the browser checks to the owner**
 
 Tell the user these need them, in their own browser:
 
 1. Sign in at https://tunnel.dilyor.dev/account with email, then sign out and sign in with GitHub.
-2. Open https://tunnel.dilyor.dev/admin. Today shows at least 1 install (Step 16's `install.sh`), 1 message and 1 tunnel opened.
+2. Open https://tunnel.dilyor.dev/admin. Today shows at least 1 install (Step 15's `install.sh`), 1 message and 1 tunnel opened.
 3. Get Plus with a Lemon Squeezy **test card** (the owner types it; Claude never enters card numbers). The account page shows Plus within a minute; Manage billing opens Lemon Squeezy's portal; cancelling there shows "Plus, ends <date>".
 4. Run `tunnel login` on a machine and confirm the code on the account page.
 
-Once the owner has read and corrected the legal pages, they submit the Lemon Squeezy store for activation (it asks for the Terms, Privacy and Refund URLs). If the store isn't approved, the fallback is Paddle, one new adapter next to `billing/lemonsqueezy.ts`. Going live then means a new API key, the live variant ids and the live webhook secret in `/etc/tunnel-relay.env` (Step 13 again), then `sudo systemctl restart tunnel-relay`.
+Once the owner has read and corrected the legal pages, they submit the Lemon Squeezy store for activation (it asks for the Terms, Privacy and Refund URLs). If the store isn't approved, the fallback is Paddle, one new adapter next to `billing/lemonsqueezy.ts`. Going live then means a new API key, the live variant ids and the live webhook secret in `/etc/tunnel-relay.env` (Step 12 again), then `sudo systemctl restart tunnel-relay`.
