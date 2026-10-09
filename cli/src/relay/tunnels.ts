@@ -255,14 +255,18 @@ export function tunnelRoutes(app: App) {
     const size = await saveBody(req, path, app.plans.maxUpload(tid), () => app.plans.tooBig(tid));
     try {
       if (size === 0) throw new HttpError(400, 'Empty file.');
+      // The tunnel may have been closed while the body was streaming in, and closing only removes
+      // the files it has rows for.
+      if (!store.tunnel.get(tid)) throw new HttpError(404, 'This tunnel was closed.');
       // Chunked uploads have no Content-Length, so the storage check runs again on the real size.
+      // No await from here to the insert: the checks and the row stay atomic.
       app.plans.checkUpload(tid, size);
+      const now = Date.now();
+      store.insertFile.run(id, tid, me.id, size, now, app.plans.expires(tid, now));
     } catch (error) {
       await unlink(path).catch(() => {});
       throw error;
     }
-    const now = Date.now();
-    store.insertFile.run(id, tid, me.id, size, now, app.plans.expires(tid, now));
     send(res, 201, { fileId: id, size });
   });
 

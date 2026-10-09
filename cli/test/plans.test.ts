@@ -230,6 +230,25 @@ describe('streamed uploads', () => {
     }
   });
 
+  test('a tunnel closed during an upload answers 404 and keeps no file', async () => {
+    const r = await relay();
+    try {
+      const a = agent(() => r, 'closed');
+      assert.equal((await a.run('open', 'up')).code, 0);
+      const sending = upload(r, a, trickle(8, 64 * 1024, 150));
+      await sleep(400);
+      assert.equal((await a.run('close', '-t', 'up')).code, 0);
+      const res = await sending;
+      assert.equal(res.status, 404);
+      const { error } = (await res.json()) as { error: string };
+      assert.equal(error, 'This tunnel was closed.');
+      assert.deepEqual(readdirSync(join(r.dataDir, 'files')), []);
+      assert.equal(await count(r, 'files'), 0);
+    } finally {
+      await r.close();
+    }
+  });
+
   test('an over-limit chunked upload gets 413 and leaves no file behind', async () => {
     const r = await relay();
     try {
