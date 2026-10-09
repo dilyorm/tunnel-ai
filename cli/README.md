@@ -126,7 +126,7 @@ locally, run `npm run dev-relay` in `cli/` (every feature on, email and payments
 | Path | What |
 |---|---|
 | `cli/` | The `tunnel-ai` npm package: CLI, relay, agent skill |
-| `site/` | Landing page (Vite, static) |
+| `site/` | The landing page, plus the account, admin and legal pages (Vite, static) |
 | `deploy/` | systemd unit, settings example, nginx vhost, deploy script for the hosted relay |
 | `docs/` | Design notes |
 
