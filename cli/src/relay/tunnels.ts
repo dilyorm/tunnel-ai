@@ -59,6 +59,7 @@ export function tunnelRoutes(app: App) {
     }
     const now = Date.now();
     if (now - row.seen > 30_000) store.touchMember.run(now, row.id);
+    app.stats.active('member', row.id);
     return row;
   }
 
@@ -119,6 +120,7 @@ export function tunnelRoutes(app: App) {
     const id = shortId('d', 14);
     const token = secretToken();
     store.insertDevice.run(id, sha256(token), Date.now());
+    app.stats.count('devices_created');
     send(res, 201, { deviceId: id, deviceToken: token });
   });
 
@@ -133,6 +135,7 @@ export function tunnelRoutes(app: App) {
     const profile = input.profile ? str(input.profile, 'profile', LIMITS.profileBytes) : null;
     store.insertTunnel.run(tunnelId, device.id, memberId, now);
     store.insertMember.run(memberId, tunnelId, sha256(token), profile, now, now);
+    app.stats.count('tunnels_opened');
     send(res, 201, { tunnelId, memberId, memberToken: token });
   });
 
@@ -183,6 +186,7 @@ export function tunnelRoutes(app: App) {
     const memberId = shortId('m', 12);
     const token = secretToken();
     store.insertMember.run(memberId, invite.tunnel_id, sha256(token), null, now, now);
+    app.stats.count('joins');
     send(res, 200, { tunnelId: invite.tunnel_id, wrapped: invite.wrapped, memberId, memberToken: token });
   });
 
@@ -222,6 +226,7 @@ export function tunnelRoutes(app: App) {
     const now = Date.now();
     store.insertMessage.run(tid, row.seq, me.id, ct, now, app.plans.expires(tid, now));
     wake(tid);
+    app.stats.count('messages');
     send(res, 201, { seq: row.seq });
   });
 
@@ -267,6 +272,9 @@ export function tunnelRoutes(app: App) {
       await unlink(path).catch(() => {});
       throw error;
     }
+    // Outside the try: the row is saved by now, and the cleanup above must only ever run for a file with no row.
+    app.stats.count('files');
+    app.stats.count('file_bytes', size);
     send(res, 201, { fileId: id, size });
   });
 

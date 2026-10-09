@@ -7,6 +7,7 @@ import { openStore, type Device, type Store } from './db.js';
 import { readFeatures, type Env, type Features } from './config.js';
 import { HttpError, LIMITS, bearer, send, type Handler } from './http.js';
 import { createPlans, type Plans } from './plans.js';
+import { createStats, NO_STATS, type Stats } from './stats.js';
 import { tunnelRoutes } from './tunnels.js';
 
 export { LIMITS } from './http.js';
@@ -53,6 +54,7 @@ export interface App {
   log(line: string): void;
   linkPollSeconds: number;
   plans: Plans;
+  stats: Stats;
   /** Work for the 10-minute sweep (expiry, cleanup). */
   sweeps: (() => void | Promise<void>)[];
 }
@@ -108,10 +110,15 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       if (!row) throw new HttpError(401, 'Unknown device.');
       const now = Date.now();
       if (row.seen === null || now - row.seen > HOUR) store.touchDevice.run(now, row.id);
+      app.stats.active('device', row.id);
       return row;
     },
+    stats: NO_STATS,
     sweeps: [],
   };
+
+  // Stats feed the admin page, so they run only on a relay that has one.
+  if (features.adminEmails.size > 0) app.stats = createStats(app);
 
   const limit = counter(60_000, LIMITS.requestsPerMinute, 'Too many requests. Slow down and retry in a minute.');
 
