@@ -1,16 +1,19 @@
 import { randomInt } from 'node:crypto';
-import { readFile, unlink, writeFile } from 'node:fs/promises';
+import { once } from 'node:events';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { unlink } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import { secretToken, sha256, shortId } from '../crypto.js';
 import type { Member } from './db.js';
-import { HttpError, LIMITS, body, bearer, json, send, str } from './http.js';
+import { HttpError, LIMITS, bearer, json, send, str } from './http.js';
 import type { App } from './server.js';
 
 // Devices, tunnels, invites, members, messages and files: the relay's original job. Everything stored
 // here is ciphertext or an id. The relay never sees tunnel keys, names or message text.
 
-export function tunnelRoutes(app: App, options: { ttlMs: number }) {
+export function tunnelRoutes(app: App) {
   const { store } = app;
 
   // ---------- long-poll wakeups ----------
@@ -77,6 +80,38 @@ export function tunnelRoutes(app: App, options: { ttlMs: number }) {
     wake(tunnelId);
   }
 
+  /**
+   * Stream the request body into a new file and return its size. Past `max` bytes the file is
+   * removed and `tooBig()` is thrown. The request is not destroyed, so the 413 still reaches the
+   * client (the server drains the rest of the body).
+   */
+  async function saveBody(req: IncomingMessage, path: string, max: number, tooBig: () => Error): Promise<number> {
+    const out = createWriteStream(path, { flags: 'wx' });
+    // A disk error (full disk, missing folder) is an event that can land while we wait for the next
+    // chunk. With no listener it would crash the relay, and a stream that already failed never drains.
+    let failure: Error | undefined;
+    out.on('error', (error) => (failure = error));
+    let size = 0;
+    try {
+      for await (const chunk of req.iterator({ destroyOnReturn: false })) {
+        if (failure) throw failure;
+        size += (chunk as Buffer).length;
+        if (size > max) throw tooBig();
+        if (!out.write(chunk)) await once(out, 'drain');
+      }
+      if (failure) throw failure;
+      out.end();
+      await once(out, 'close');
+      return size;
+    } catch (error) {
+      out.destroy();
+      // Windows can't delete a file that is still open.
+      if (!out.closed) await once(out, 'close');
+      await unlink(path).catch(() => {});
+      throw error;
+    }
+  }
+
   // ---------- routes ----------
 
   app.on('POST', '/v1/devices', async (req, res) => {
@@ -88,22 +123,15 @@ export function tunnelRoutes(app: App, options: { ttlMs: number }) {
   });
 
   app.on('POST', '/v1/tunnels', async (req, res) => {
-    const deviceId = app.device(req).id;
+    const device = app.device(req);
     const input = await json<{ profile?: string }>(req);
-    const max = app.maxTunnelsPerDevice;
-    if (max > 0 && (store.countTunnels.get(deviceId)?.n ?? 0) >= max) {
-      throw new HttpError(
-        402,
-        `This relay allows ${max} open tunnel${max === 1 ? '' : 's'} per device. ` +
-          'Close one with `tunnel close`, or see https://tunnel.dilyor.dev/#pricing.',
-      );
-    }
+    app.plans.checkTunnelCap(device);
     const now = Date.now();
     const tunnelId = shortId('t', 16);
     const memberId = shortId('m', 12);
     const token = secretToken();
     const profile = input.profile ? str(input.profile, 'profile', LIMITS.profileBytes) : null;
-    store.insertTunnel.run(tunnelId, deviceId, memberId, now);
+    store.insertTunnel.run(tunnelId, device.id, memberId, now);
     store.insertMember.run(memberId, tunnelId, sha256(token), profile, now, now);
     send(res, 201, { tunnelId, memberId, memberToken: token });
   });
@@ -191,7 +219,8 @@ export function tunnelRoutes(app: App, options: { ttlMs: number }) {
     const ct = str(input.ct, 'ct', LIMITS.messageBytes);
     const row = store.bumpSeq.get(tid);
     if (!row) throw new HttpError(404, 'Tunnel not found.');
-    store.insertMessage.run(tid, row.seq, me.id, ct, Date.now());
+    const now = Date.now();
+    store.insertMessage.run(tid, row.seq, me.id, ct, now, app.plans.expires(tid, now));
     wake(tid);
     send(res, 201, { seq: row.seq });
   });
@@ -218,33 +247,49 @@ export function tunnelRoutes(app: App, options: { ttlMs: number }) {
 
   app.on('POST', '/v1/tunnels/:tid/files', async (req, res, [tid]) => {
     const me = member(req, tid);
-    const data = await body(req, LIMITS.fileBytes);
-    if (data.length === 0) throw new HttpError(400, 'Empty file.');
+    // Refuse a declared size over the limit before reading a byte of it.
+    const declared = Number(req.headers['content-length']);
+    if (declared > 0) app.plans.checkUpload(tid, declared);
     const id = shortId('f', 10);
-    await writeFile(join(app.filesDir, id), data);
-    store.insertFile.run(id, tid, me.id, data.length, Date.now());
-    send(res, 201, { fileId: id, size: data.length });
+    const path = join(app.filesDir, id);
+    const size = await saveBody(req, path, app.plans.maxUpload(tid), () => app.plans.tooBig(tid));
+    try {
+      if (size === 0) throw new HttpError(400, 'Empty file.');
+      // Chunked uploads have no Content-Length, so the storage check runs again on the real size.
+      app.plans.checkUpload(tid, size);
+    } catch (error) {
+      await unlink(path).catch(() => {});
+      throw error;
+    }
+    const now = Date.now();
+    store.insertFile.run(id, tid, me.id, size, now, app.plans.expires(tid, now));
+    send(res, 201, { fileId: id, size });
   });
 
   app.on('GET', '/v1/tunnels/:tid/files/:fid', async (req, res, [tid, fid]) => {
     member(req, tid);
     const file = store.file.get(fid);
-    if (!file || file.tunnel_id !== tid) throw new HttpError(404, 'File not found. Files are kept for 7 days.');
-    const data = await readFile(join(app.filesDir, file.id));
-    res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': data.length });
-    res.end(data);
+    if (!file || file.tunnel_id !== tid) throw new HttpError(404, 'File not found. It may have expired.');
+    const stream = createReadStream(join(app.filesDir, file.id));
+    try {
+      await once(stream, 'open');
+    } catch {
+      throw new HttpError(404, 'File not found. It may have expired.');
+    }
+    res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': file.size });
+    // A client that hangs up mid-download is not an error worth logging.
+    await pipeline(stream, res).catch(() => {});
   });
 
   // ---------- cleanup ----------
 
   app.sweeps.push(async () => {
     const now = Date.now();
-    const cutoff = now - options.ttlMs;
     store.deleteExpiredInvites.run(now);
-    store.deleteOldMessages.run(cutoff);
-    const old = store.oldFiles.all(cutoff);
-    store.deleteOldFiles.run(cutoff);
-    await Promise.all(old.map((f) => unlink(join(app.filesDir, f.id)).catch(() => {})));
+    store.deleteExpiredMessages.run(now);
+    const expired = store.expiredFiles.all(now);
+    store.deleteExpiredFiles.run(now);
+    await Promise.all(expired.map((f) => unlink(join(app.filesDir, f.id)).catch(() => {})));
   });
 
   return {

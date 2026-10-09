@@ -6,6 +6,7 @@ import { VERSION } from '../version.js';
 import { openStore, type Device, type Store } from './db.js';
 import { readFeatures, type Env, type Features } from './config.js';
 import { HttpError, LIMITS, bearer, send, type Handler } from './http.js';
+import { createPlans, type Plans } from './plans.js';
 import { tunnelRoutes } from './tunnels.js';
 
 export { LIMITS } from './http.js';
@@ -19,8 +20,6 @@ export interface RelayOptions {
   dataDir: string;
   /** Tunnels one device may own at once. 0 means unlimited. */
   maxTunnelsPerDevice?: number;
-  /** How long messages and files are kept. */
-  ttlMs?: number;
   /** Honour X-Forwarded-For when behind a reverse proxy. */
   trustProxy?: boolean;
   /** Feature settings (TUNNEL_PUBLIC_URL, GITHUB_*, …). Nothing set means a plain relay. */
@@ -34,6 +33,8 @@ export interface RelayOptions {
 
 export interface Relay {
   url: string;
+  /** Run the cleanup now instead of waiting for the 10-minute timer. */
+  sweep(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -41,7 +42,6 @@ export interface Relay {
 export interface App {
   store: Store;
   filesDir: string;
-  maxTunnelsPerDevice: number;
   on(method: string, pattern: string, handler: Handler): void;
   clientOf(req: IncomingMessage): string;
   /** A fixed-window limiter. It counts per client address unless the caller passes a key. */
@@ -52,12 +52,12 @@ export interface App {
   fetch: typeof fetch;
   log(line: string): void;
   linkPollSeconds: number;
+  plans: Plans;
   /** Work for the 10-minute sweep (expiry, cleanup). */
   sweeps: (() => void | Promise<void>)[];
 }
 
 const HOUR = 60 * 60 * 1000;
-const DAY = 24 * 60 * 60 * 1000;
 
 export async function startRelay(options: RelayOptions): Promise<Relay> {
   const store = await openStore(options.dataDir);
@@ -90,7 +90,10 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   const app: App = {
     store,
     filesDir: join(options.dataDir, 'files'),
-    maxTunnelsPerDevice: options.maxTunnelsPerDevice ?? 0,
+    plans: createPlans(store, {
+      freeCap: options.maxTunnelsPerDevice ?? 0,
+      upgradeHint: Boolean(features.billing),
+    }),
     on(method, pattern, handler) {
       routes.push([method, new RegExp('^' + pattern.replace(/:(\w+)/g, '([^/]+)') + '$'), handler]);
     },
@@ -113,7 +116,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   const limit = counter(60_000, LIMITS.requestsPerMinute, 'Too many requests. Slow down and retry in a minute.');
 
   app.on('GET', '/v1/health', async (_req, res) => send(res, 200, { ok: true, version: VERSION }));
-  const tunnels = tunnelRoutes(app, { ttlMs: options.ttlMs ?? 7 * DAY });
+  const tunnels = tunnelRoutes(app);
 
   const server = createServer(async (req, res) => {
     try {
@@ -128,6 +131,9 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       }
       throw new HttpError(404, 'Not found.');
     } catch (error) {
+      // A handler may refuse before reading the body (an upload over the limit). Drain the rest,
+      // or the client is still sending when the reply comes and sees a reset instead of the error.
+      if (!req.complete) req.resume();
       if (res.headersSent || res.destroyed) return;
       if (error instanceof HttpError) {
         send(res, error.status, { error: error.message });
@@ -137,8 +143,10 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       }
     }
   });
-  // long-polls hold requests open; keep sockets alive a little longer than the longest wait
-  server.requestTimeout = (LIMITS.maxWaitS + 30) * 1000;
+  // A 100 MB upload on a slow link can take many minutes, so there is no total request time limit.
+  // A socket that sends nothing for 2 minutes is dropped instead. Long-polls wait at most 55 s.
+  server.requestTimeout = 0;
+  server.timeout = 120_000;
   server.keepAliveTimeout = 65_000;
 
   async function sweep() {
@@ -163,6 +171,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
 
   return {
     url: `http://${host}:${address.port}`,
+    sweep,
     async close() {
       clearInterval(timer);
       tunnels.wakeAll();

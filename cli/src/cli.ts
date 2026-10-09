@@ -13,7 +13,7 @@ Start or join
   tunnel invite                       New invite code for the current tunnel
 
 Talk
-  tunnel send "text" [--to name] [--file path]...   Send a message (and files, up to 10 MB each)
+  tunnel send "text" [--to name] [--file path]...   Send a message, with files up to your plan's size limit
   tunnel send -                       Read the message text from stdin
   tunnel inbox                        Show new messages for you and mark them read
   tunnel wait [--timeout 300]         Block until a message arrives, then print it

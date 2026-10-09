@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -72,6 +73,22 @@ export async function sql(dataDir: string, statement: string, ...params: (string
   const store = await openStore(dataDir);
   try {
     return store.db.prepare(statement).all(...params).map((row) => ({ ...row }));
+  } finally {
+    store.close();
+  }
+}
+
+/** Put these devices on one new account with `plan`, as an admin grant (billing leaves it alone). Returns the account id. */
+export async function grant(dataDir: string, plan: 'free' | 'plus' | 'pro', ...deviceIds: string[]): Promise<string> {
+  const store = await openStore(dataDir);
+  try {
+    const id = `a_${randomUUID().slice(0, 8)}`;
+    const now = Date.now();
+    store.db
+      .prepare("INSERT INTO accounts (id, email, plan, plan_source, created, seen) VALUES (?, ?, ?, 'admin', ?, ?)")
+      .run(id, `${id}@example.com`, plan, now, now);
+    for (const device of deviceIds) store.db.prepare('UPDATE devices SET account_id = ? WHERE id = ?').run(id, device);
+    return id;
   } finally {
     store.close();
   }

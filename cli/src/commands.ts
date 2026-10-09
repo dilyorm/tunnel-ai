@@ -24,7 +24,6 @@ import { RelayClient } from './relay-client.js';
 import { Store, type TunnelRecord } from './store.js';
 
 export const DEFAULT_RELAY = 'https://tunnel.dilyor.dev';
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const LONG_POLL_S = 50;
 
 export interface IO {
@@ -319,13 +318,11 @@ export async function sendCmd(ctx: Ctx, args: string[]) {
   const files: FileRef[] = [];
   for (const p of paths) {
     const path = resolve(ctx.cwd, p);
-    let size: number;
     try {
-      size = statSync(path).size;
+      statSync(path);
     } catch {
       throw new UsageError(`Can't read ${p}.`);
     }
-    if (size > MAX_FILE_BYTES) throw new UsageError(`${p} is ${formatSize(size)}. Files can be up to 10 MB.`);
     const data = await readFile(path);
     const up = await api(rec).upload<{ fileId: string }>(tunnelPath(rec, '/files'), seal(key, data));
     files.push({ id: up.fileId, name: basename(path), size: data.length });

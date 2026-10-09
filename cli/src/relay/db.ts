@@ -261,7 +261,7 @@ export async function openStore(dataDir: string) {
     countMembers: q<{ n: number }>('SELECT COUNT(*) AS n FROM members WHERE tunnel_id = ?'),
 
     insertMessage: q(
-      'INSERT INTO messages (tunnel_id, seq, member_id, ct, created) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO messages (tunnel_id, seq, member_id, ct, created, expires) VALUES (?, ?, ?, ?, ?, ?)',
     ),
     messagesAfter: q<MessageRow>(
       'SELECT seq, member_id, ct, created FROM messages WHERE tunnel_id = ? AND seq > ? ORDER BY seq LIMIT ?',
@@ -277,12 +277,14 @@ export async function openStore(dataDir: string) {
     ),
     deleteInvite: q('DELETE FROM invites WHERE slot = ?'),
 
-    insertFile: q('INSERT INTO files (id, tunnel_id, member_id, size, created) VALUES (?, ?, ?, ?, ?)'),
-    file: q<{ id: string; tunnel_id: string }>('SELECT id, tunnel_id FROM files WHERE id = ?'),
+    insertFile: q(
+      'INSERT INTO files (id, tunnel_id, member_id, size, created, expires) VALUES (?, ?, ?, ?, ?, ?)',
+    ),
+    file: q<{ id: string; tunnel_id: string; size: number }>('SELECT id, tunnel_id, size FROM files WHERE id = ?'),
     tunnelFiles: q<{ id: string }>('SELECT id FROM files WHERE tunnel_id = ?'),
-    oldFiles: q<{ id: string }>('SELECT id FROM files WHERE created < ?'),
-    deleteOldFiles: q('DELETE FROM files WHERE created < ?'),
-    deleteOldMessages: q('DELETE FROM messages WHERE created < ?'),
+    expiredFiles: q<{ id: string }>('SELECT id FROM files WHERE expires <= ?'),
+    deleteExpiredFiles: q('DELETE FROM files WHERE expires <= ?'),
+    deleteExpiredMessages: q('DELETE FROM messages WHERE expires <= ?'),
     deleteExpiredInvites: q('DELETE FROM invites WHERE expires <= ?'),
   };
 

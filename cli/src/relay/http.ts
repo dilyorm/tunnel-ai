@@ -6,7 +6,6 @@ import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:
 export const LIMITS = {
   messageBytes: 96 * 1024, // sealed + base64 form of a 64 KB message
   profileBytes: 2 * 1024,
-  fileBytes: 10 * 1024 * 1024 + 64,
   jsonBody: 256 * 1024,
   inviteTtlMs: 15 * 60 * 1000,
   inviteAttempts: 3,
