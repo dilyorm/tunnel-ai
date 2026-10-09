@@ -4,10 +4,13 @@
 export class ApiError extends Error {
   /** The HTTP status, or 0 when the relay couldn't be reached. */
   status: number;
+  /** The relay's whole JSON reply, for the few failures that carry more than a sentence. */
+  data?: unknown;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, data?: unknown) {
     super(message);
     this.status = status;
+    this.data = data;
   }
 }
 
@@ -25,7 +28,7 @@ export async function api<T>(method: string, path: string, data?: unknown): Prom
   }
   if (res.status === 204) return undefined as T;
   const body = await res.json().catch(() => undefined);
-  if (!res.ok) throw new ApiError(res.status, body?.error ?? `Something went wrong (${res.status}). Try again in a minute.`);
+  if (!res.ok) throw new ApiError(res.status, body?.error ?? `Something went wrong (${res.status}). Try again in a minute.`, body);
   return body as T;
 }
 
@@ -63,3 +66,32 @@ export const title = (plan: string) => plan.charAt(0).toUpperCase() + plan.slice
 /** A date in the reader's own format, e.g. 9 Oct 2026. */
 export const formatDay = (ms: number) =>
   new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+
+export const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+
+/** One plain sentence in the page's #status line. */
+export function say(text: string, tone: 'ok' | 'error' = 'ok') {
+  const status = byId('status');
+  status.textContent = text;
+  status.dataset.tone = tone;
+  status.hidden = false;
+}
+
+/** A button that is disabled while its action runs, and reports a failure in #status. */
+export function button(label: string, onClick: () => unknown, quiet = false): HTMLButtonElement {
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = quiet ? 'btn btn-quiet' : 'btn';
+  el.textContent = label;
+  el.addEventListener('click', async () => {
+    el.disabled = true;
+    try {
+      await onClick();
+    } catch (error) {
+      say(messageOf(error), 'error');
+    } finally {
+      el.disabled = false;
+    }
+  });
+  return el;
+}

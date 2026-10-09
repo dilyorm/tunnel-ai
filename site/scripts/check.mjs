@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 
 const SITE = 'https://tunnel.dilyor.dev/';
 // Every page the build must produce (keep in step with vite.config.ts).
-const PAGES = ['index', 'terms', 'privacy', 'refund'];
+const PAGES = ['index', 'terms', 'privacy', 'refund', 'account'];
 // Signed-in pages: noindex, and never in the sitemap.
 const PRIVATE = ['account', 'admin'];
 

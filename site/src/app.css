@@ -74,3 +74,149 @@
 .legal li + li {
   margin-top: 6px;
 }
+
+/* ---------- buttons, cards and tables ---------- */
+
+button.btn {
+  border: 0;
+  font-family: var(--sans);
+  cursor: pointer;
+}
+
+button.btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.btn-quiet {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.btn-quiet:hover {
+  background: var(--haze);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.actions .btn,
+.sign-in .btn,
+.field-row .btn,
+.table .btn {
+  margin-top: 0;
+}
+
+.card {
+  margin-top: 32px;
+  max-width: var(--measure);
+  padding: 24px;
+  background: var(--haze);
+  clip-path: var(--pixel-corners);
+}
+
+.card h2 {
+  font: 600 1.25rem/1.2 var(--sans);
+}
+
+.card p {
+  margin-top: 12px;
+}
+
+.code {
+  font: 400 2rem/1.2 var(--pixel);
+  letter-spacing: 0.06em;
+}
+
+/* ---------- account ---------- */
+
+.sign-in {
+  margin-top: 32px;
+  display: grid;
+  justify-items: start;
+  gap: 28px;
+}
+
+.email-form {
+  width: 100%;
+  max-width: 32rem;
+}
+
+.email-form label {
+  font-size: 0.9375rem;
+  color: var(--stone);
+}
+
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.field-row input,
+.search input {
+  flex: 1 1 14rem;
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 1rem var(--sans);
+}
+
+.facts {
+  margin: 32px 0 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 10px 32px;
+  max-width: var(--measure);
+}
+
+.facts div {
+  display: contents;
+}
+
+.facts dt {
+  color: var(--stone);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.table-wrap {
+  margin-top: 16px;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--stone);
+  border-bottom: 1px solid var(--ink);
+  padding: 8px 16px 8px 0;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 10px 16px 10px 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: middle;
+}
+
+.table .btn {
+  padding: 8px 14px;
+}

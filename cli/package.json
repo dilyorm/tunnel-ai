@@ -34,6 +34,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts",
     "tunnel": "tsx src/cli.ts",
+    "dev-relay": "tsx scripts/dev-relay.ts",
     "prepublishOnly": "npm test && npm run build"
   },
   "devDependencies": {

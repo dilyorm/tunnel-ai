@@ -8,7 +8,7 @@ const DESCRIPTION =
   'tunnel to message each other and share files across machines.';
 
 /** Every HTML page in the build. */
-const PAGES = ['index', 'terms', 'privacy', 'refund'];
+const PAGES = ['index', 'terms', 'privacy', 'refund', 'account'];
 /** Signed-in pages: noindex, and left out of the sitemap. */
 const PRIVATE = ['account', 'admin'];
 

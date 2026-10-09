@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Account | tunnel</title>
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <header class="nav wrap">
+      <a class="brand" href="/" aria-label="tunnel home">
+        <svg class="brand-mark" viewBox="0 0 9 9" aria-hidden="true">
+          <path d="M0 0h9v1H0zM0 8h9v1H0zM0 1h1v7H0zM8 1h1v7H8z" />
+          <path d="M2 2h5v1H2zM2 6h5v1H2zM2 3h1v3H2zM6 3h1v3H6z" />
+          <path d="M4 4h1v1H4z" />
+        </svg>
+        tunnel
+      </a>
+      <nav class="nav-links" aria-label="Main">
+        <a href="/#pricing">Pricing</a>
+        <a href="https://github.com/dilyorm/tunnel-ai">GitHub</a>
+      </nav>
+    </header>
+
+    <main class="page wrap">
+      <h1 class="page-title">Account</h1>
+      <p class="status" id="status" role="status" hidden></p>
+      <div class="actions" id="login-confirm" hidden></div>
+
+      <section id="signed-out" hidden>
+        <p class="page-lede">
+          Sign in to pay for Plus or Pro and to see the machines linked to your account. The Free
+          plan needs no account.
+        </p>
+        <div class="sign-in">
+          <a class="btn" id="github" href="/v1/auth/github/start" hidden>Continue with GitHub</a>
+          <form class="email-form" id="email-form" hidden>
+            <label for="email">Email</label>
+            <div class="field-row">
+              <input id="email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required />
+              <button class="btn" type="submit">Email me a sign-in link</button>
+            </div>
+          </form>
+          <p class="page-lede" id="email-sent" hidden>Check your inbox for the sign-in link. It works for 15 minutes.</p>
+        </div>
+      </section>
+
+      <section class="card" id="link-card" hidden>
+        <h2>Link a machine</h2>
+        <p>
+          A machine running <code>tunnel login</code> wants to join your account. Link it only if
+          this code matches the one in its terminal.
+        </p>
+        <p class="code" id="link-code"></p>
+        <div class="actions">
+          <button class="btn" id="link-confirm" type="button">Link this machine</button>
+          <button class="btn btn-quiet" id="link-cancel" type="button">Cancel</button>
+        </div>
+      </section>
+
+      <section id="signed-in" hidden>
+        <dl class="facts">
+          <div><dt>Email</dt><dd id="me-email"></dd></div>
+          <div><dt>Plan</dt><dd id="me-plan"></dd></div>
+          <div><dt>Tunnels</dt><dd id="me-tunnels"></dd></div>
+          <div><dt>Files</dt><dd id="me-files"></dd></div>
+          <div><dt>History</dt><dd id="me-history"></dd></div>
+        </dl>
+        <div class="actions" id="plan-actions"></div>
+
+        <h2 class="page-subtitle">Machines</h2>
+        <p class="page-lede" id="no-machines">No machines yet. Run <code>tunnel login</code> on one to link it.</p>
+        <div class="table-wrap">
+          <table class="table" id="machines" hidden>
+            <thead>
+              <tr>
+                <th scope="col">Machine</th>
+                <th scope="col">Tunnels</th>
+                <th scope="col">Last used</th>
+                <th scope="col"><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="actions">
+          <a class="btn btn-quiet" id="admin-link" href="/admin" hidden>Admin</a>
+          <button class="btn btn-quiet" id="sign-out" type="button">Sign out</button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap footer-row">
+        <nav class="footer-links" aria-label="Footer">
+          <a href="https://github.com/dilyorm/tunnel-ai">GitHub</a>
+          <a href="/terms">Terms</a>
+          <a href="/privacy">Privacy</a>
+          <a href="/refund">Refunds</a>
+          <a href="https://dilyor.dev">dilyor.dev</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/account.ts"></script>
+  </body>
+</html>
