@@ -7,7 +7,7 @@ import { accountRoutes } from './accounts.js';
 import { emailRoutes } from './auth-email.js';
 import { openStore, type Device, type Store } from './db.js';
 import { readFeatures, type Env, type Features } from './config.js';
-import { HttpError, LIMITS, bearer, send, type Handler } from './http.js';
+import { HttpError, LIMITS, bearer, clientKey, send, type Handler } from './http.js';
 import { createPlans, type Plans } from './plans.js';
 import { createStats, NO_STATS, type Stats } from './stats.js';
 import { tunnelRoutes } from './tunnels.js';
@@ -69,8 +69,9 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
 
   function clientOf(req: IncomingMessage): string {
     // Behind a proxy, the proxy must overwrite X-Forwarded-For; the first entry is trusted.
+    // IPv6 clients are keyed by their /64 (see clientKey), so rotating addresses doesn't dodge a limit.
     const forwarded = options.trustProxy ? String(req.headers['x-forwarded-for'] ?? '') : '';
-    return forwarded.split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+    return clientKey(forwarded.split(',')[0].trim() || req.socket.remoteAddress || 'unknown');
   }
 
   function counter(windowMs: number, max: number, message: string) {

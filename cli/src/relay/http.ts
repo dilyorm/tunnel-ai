@@ -14,6 +14,7 @@ export const LIMITS = {
   devicesPerHour: 10,
   loginEmailsPerAddress: 5,
   loginEmailsPerClient: 20,
+  loginEmailsPerHour: 100,
 };
 
 export class HttpError extends Error {
@@ -106,9 +107,49 @@ export function redirect(res: ServerResponse, location: string, setCookies: stri
 /**
  * Where to send someone after sign-in: a path on this site, else /account. "//host" and "/\host"
  * are other sites to a browser, and browsers drop tabs and newlines, so "/<tab>/host" is one too.
+ * "/.//host" and "/a/..//host" collapse to "//host" when a browser resolves them, so a path the URL
+ * parser would rewrite, or that resolves to "//", is refused as well.
  */
 export function safeReturn(value: unknown): string {
-  if (typeof value !== 'string' || value.length > 512) return '/account';
-  if (!value.startsWith('/') || value.startsWith('//') || /[\\\x00-\x1f\x7f]/.test(value)) return '/account';
+  const fallback = '/account';
+  if (typeof value !== 'string' || value.length > 512) return fallback;
+  if (!value.startsWith('/') || value.startsWith('//') || /[\\\x00-\x1f\x7f]/.test(value)) return fallback;
+  try {
+    const url = new URL(value, 'http://x');
+    if (url.origin !== 'http://x' || url.pathname.startsWith('//')) return fallback;
+    if (url.pathname + url.search + url.hash !== value) return fallback;
+  } catch {
+    return fallback;
+  }
   return value;
+}
+
+/**
+ * What a limiter counts a client as. An IPv6 customer owns a whole /64, so counting single addresses
+ * would let one machine dodge every limit by rotating addresses: key by the /64 prefix. IPv4, and IPv6
+ * written as IPv4 (::ffff:a.b.c.d), stay the IPv4 address. Anything unparseable is used as it came.
+ */
+export function clientKey(address: string): string {
+  const raw = address.trim().replace(/%.*$/, '').replace(/^\[|\]$/g, '');
+  if (!raw.includes(':')) return raw;
+  let text = raw;
+  const quad = /^(.*:)(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(text);
+  if (quad) {
+    const [a, b, c, d] = quad.slice(2).map(Number);
+    if ([a, b, c, d].some((n) => n > 255)) return raw;
+    text = `${quad[1]}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const halves = text.split('::');
+  if (halves.length > 2) return raw;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves[1] ? halves[1].split(':') : [];
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 1 ? missing !== 0 : missing < 1) return raw;
+  const groups = [...head, ...Array<string>(missing).fill('0'), ...tail];
+  if (!groups.every((g) => /^[0-9a-f]{1,4}$/i.test(g))) return raw;
+  const n = groups.map((g) => parseInt(g, 16));
+  if (n.slice(0, 5).every((g) => g === 0) && n[5] === 0xffff) {
+    return `${n[6] >> 8}.${n[6] & 255}.${n[7] >> 8}.${n[7] & 255}`;
+  }
+  return `${n.slice(0, 4).map((g) => g.toString(16)).join(':')}::/64`;
 }

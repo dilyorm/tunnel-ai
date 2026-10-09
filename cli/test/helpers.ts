@@ -182,12 +182,15 @@ export function browser(r: { url: string }, origin = PUBLIC_URL) {
   };
 }
 
-/** Open an emailed sign-in link in this browser, as the account page does. */
-export async function follow(b: Browser, link: string): Promise<Page> {
+/**
+ * Open an emailed sign-in link in this browser, as the account page does. A browser that didn't ask
+ * for the link is told to confirm (409); pass `confirm` to answer yes.
+ */
+export async function follow(b: Browser, link: string, confirm = false): Promise<Page> {
   const url = new URL(link);
   const landing = await b.get(url.pathname + url.search);
   const token = new URL(landing.headers.get('location') ?? '/', PUBLIC_URL).searchParams.get('login');
-  return b.post('/v1/auth/email/verify', { token });
+  return b.post('/v1/auth/email/verify', confirm ? { token, confirm: true } : { token });
 }
 
 /** Sign in by email. Returns the path the account page should go to next. */
