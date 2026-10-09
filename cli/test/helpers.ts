@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -92,4 +93,108 @@ export async function grant(dataDir: string, plan: 'free' | 'plus' | 'pro', ...d
   } finally {
     store.close();
   }
+}
+
+export type Route = (url: string, init: RequestInit) => Response | Promise<Response>;
+export type Outbound = ReturnType<typeof outbound>;
+
+/**
+ * Stands in for GitHub, Resend and Lemon Squeezy. A request goes to the route with the longest
+ * matching URL prefix; anything unmatched gets a 599. Tests may swap entries in `table`.
+ */
+export function outbound(routes: Record<string, Route> = {}) {
+  const calls: { url: string; init: RequestInit; body: any }[] = [];
+  const table: Record<string, Route> = {
+    'https://api.resend.com/emails': () => Response.json({ id: 'email_1' }),
+    ...routes,
+  };
+  const stub = (async (input: string | URL | Request, init: RequestInit = {}) => {
+    const url = String(input);
+    let body: any = init.body;
+    try {
+      body = JSON.parse(String(init.body));
+    } catch {
+      // not JSON; keep it as sent
+    }
+    calls.push({ url, init, body });
+    const prefix = Object.keys(table)
+      .filter((p) => url.startsWith(p))
+      .sort((a, b) => b.length - a.length)[0];
+    return prefix ? table[prefix](url, init) : new Response(`no stub for ${url}`, { status: 599 });
+  }) as typeof fetch;
+  return {
+    fetch: stub,
+    calls,
+    table,
+    /** The sign-in link in the newest email. */
+    lastLink(): string {
+      const mail = calls.filter((c) => c.url === 'https://api.resend.com/emails').at(-1);
+      const match = /https?:\/\/\S+/.exec(mail?.body?.text ?? '');
+      if (!match) throw new Error('No sign-in email was sent.');
+      return match[0];
+    },
+  };
+}
+
+export interface Page {
+  status: number;
+  headers: Headers;
+  body: any;
+}
+
+export type Browser = ReturnType<typeof browser>;
+
+/** A browser on `origin`: keeps cookies, sends Origin on POSTs, and does not follow redirects. */
+export function browser(r: { url: string }, origin = PUBLIC_URL) {
+  const jar = new Map<string, string>();
+  async function request(method: string, path: string, data?: unknown): Promise<Page> {
+    const headers: Record<string, string> = {};
+    if (jar.size) headers.cookie = [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
+    if (method !== 'GET') headers.origin = origin;
+    if (data !== undefined) headers['content-type'] = 'application/json';
+    const res = await fetch(r.url + path, {
+      method,
+      headers,
+      redirect: 'manual',
+      body: data === undefined ? undefined : JSON.stringify(data),
+    });
+    for (const line of res.headers.getSetCookie()) {
+      const [pair, ...attributes] = line.split(';');
+      const i = pair.indexOf('=');
+      const name = pair.slice(0, i);
+      if (attributes.some((a) => a.trim() === 'Max-Age=0')) jar.delete(name);
+      else jar.set(name, pair.slice(i + 1));
+    }
+    const text = await res.text();
+    let body: any = text;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      // not JSON
+    }
+    return { status: res.status, headers: res.headers, body };
+  }
+  return {
+    jar,
+    request,
+    get: (path: string) => request('GET', path),
+    post: (path: string, data: unknown = {}) => request('POST', path, data),
+  };
+}
+
+/** Open an emailed sign-in link in this browser, as the account page does. */
+export async function follow(b: Browser, link: string): Promise<Page> {
+  const url = new URL(link);
+  const landing = await b.get(url.pathname + url.search);
+  const token = new URL(landing.headers.get('location') ?? '/', PUBLIC_URL).searchParams.get('login');
+  return b.post('/v1/auth/email/verify', { token });
+}
+
+/** Sign in by email. Returns the path the account page should go to next. */
+export async function signIn(b: Browser, out: Outbound, email: string, returnTo?: string): Promise<string> {
+  const ask = await b.post('/v1/auth/email', { email, return: returnTo });
+  assert.equal(ask.status, 202, JSON.stringify(ask.body));
+  const done = await follow(b, out.lastLink());
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  return done.body.returnTo;
 }

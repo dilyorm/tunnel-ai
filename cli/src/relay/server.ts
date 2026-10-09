@@ -3,6 +3,8 @@ import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { sha256 } from '../crypto.js';
 import { VERSION } from '../version.js';
+import { accountRoutes } from './accounts.js';
+import { emailRoutes } from './auth-email.js';
 import { openStore, type Device, type Store } from './db.js';
 import { readFeatures, type Env, type Features } from './config.js';
 import { HttpError, LIMITS, bearer, send, type Handler } from './http.js';
@@ -124,6 +126,11 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
 
   app.on('GET', '/v1/health', async (_req, res) => send(res, 200, { ok: true, version: VERSION }));
   const tunnels = tunnelRoutes(app);
+
+  if (features.publicUrl) {
+    const accounts = accountRoutes(app);
+    if (features.email) emailRoutes(app, accounts, features.email);
+  }
 
   const server = createServer(async (req, res) => {
     try {

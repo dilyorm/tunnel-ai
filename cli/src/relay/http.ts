@@ -12,6 +12,8 @@ export const LIMITS = {
   maxWaitS: 55,
   requestsPerMinute: 600,
   devicesPerHour: 10,
+  loginEmailsPerAddress: 5,
+  loginEmailsPerClient: 20,
 };
 
 export class HttpError extends Error {
@@ -75,4 +77,38 @@ export function send(res: ServerResponse, status: number, payload?: unknown, hea
     ...headers,
   });
   res.end(JSON.stringify(payload));
+}
+
+/** Cookies sent with the request. Ours are base64url or "1", so values are used as sent. */
+export function cookies(req: IncomingMessage): Record<string, string> {
+  const jar: Record<string, string> = {};
+  for (const part of String(req.headers.cookie ?? '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) jar[part.slice(0, i).trim()] = part.slice(i + 1).trim();
+  }
+  return jar;
+}
+
+/** A Set-Cookie value. Max-Age 0 deletes the cookie. */
+export function setCookie(name: string, value: string, maxAgeS: number, options: { secure: boolean; httpOnly: boolean }) {
+  const parts = [`${name}=${value}`, 'Path=/', `Max-Age=${maxAgeS}`, 'SameSite=Lax'];
+  if (options.httpOnly) parts.push('HttpOnly');
+  if (options.secure) parts.push('Secure');
+  return parts.join('; ');
+}
+
+export function redirect(res: ServerResponse, location: string, setCookies: string[] = []) {
+  const headers: OutgoingHttpHeaders = { location, 'cache-control': 'no-store' };
+  if (setCookies.length) headers['set-cookie'] = setCookies;
+  res.writeHead(302, headers).end();
+}
+
+/**
+ * Where to send someone after sign-in: a path on this site, else /account. "//host" and "/\host"
+ * are other sites to a browser, and browsers drop tabs and newlines, so "/<tab>/host" is one too.
+ */
+export function safeReturn(value: unknown): string {
+  if (typeof value !== 'string' || value.length > 512) return '/account';
+  if (!value.startsWith('/') || value.startsWith('//') || /[\\\x00-\x1f\x7f]/.test(value)) return '/account';
+  return value;
 }
