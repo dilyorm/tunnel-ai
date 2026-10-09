@@ -156,31 +156,48 @@ function planControl(account: AdminAccount, saved: (account: AdminAccount) => vo
   }
   const until = document.createElement('input');
   until.type = 'date';
+  until.min = new Date().toISOString().slice(0, 10);
   until.setAttribute('aria-label', `Last day of the plan for ${account.email} (optional)`);
   if (account.planUntil) until.value = new Date(account.planUntil).toISOString().slice(0, 10);
+
+  /** Save and Clear both rebuild the row, so only one runs at a time: every control in it waits. */
+  const alone = (action: () => Promise<void>) => async () => {
+    const controls = [...box.querySelectorAll<HTMLSelectElement | HTMLInputElement | HTMLButtonElement>('select, input, button')];
+    for (const control of controls) control.disabled = true;
+    try {
+      await action();
+    } finally {
+      for (const control of controls) control.disabled = false;
+    }
+  };
 
   box.append(
     select,
     until,
-    button('Save', async () => {
-      const grant = await api<Grant>('POST', grantPath(account), {
-        plan: select.value,
+    button(
+      'Save',
+      alone(async () => {
+        // An empty date is the deliberate "no end date". A half-typed or out-of-range one is not, and must not become it.
         // The plan runs to the end of the chosen day (UTC).
-        until: until.value ? Date.parse(`${until.value}T23:59:59Z`) : null,
-      });
-      saved({ ...account, ...grant });
-      say(`${account.email} is on ${title(grant.plan)}${grant.planUntil ? ` until ${lastDay(grant.planUntil)}` : ''}.`);
-    }),
+        const end = until.value ? Date.parse(`${until.value}T23:59:59Z`) : null;
+        if (until.validity.badInput || (end !== null && !Number.isFinite(end))) {
+          throw new Error("That last day isn't a full date. Finish the date, or clear it for no end date.");
+        }
+        const grant = await api<Grant>('POST', grantPath(account), { plan: select.value, until: end });
+        saved({ ...account, ...grant });
+        say(`${account.email} is on ${title(grant.plan)}${grant.planUntil ? ` until ${lastDay(grant.planUntil)}` : ''}.`);
+      }),
+    ),
   );
   if (account.planSource === 'admin') {
     box.append(
       button(
         'Clear',
-        async () => {
+        alone(async () => {
           const grant = await api<Grant>('POST', grantPath(account), { plan: null });
           saved({ ...account, ...grant });
           say(`Cleared the grant for ${account.email}. The account is on ${title(grant.plan)}.`);
-        },
+        }),
         true,
       ),
     );
@@ -212,36 +229,49 @@ function accountRow(account: AdminAccount): HTMLTableRowElement {
   return row;
 }
 
-let query = '';
-let next: string | null = null;
+/** What the table shows now: the search it answers, and where its next page starts. */
+let shown: { query: string; next: string | null } = { query: '', next: null };
+/** Numbers the loads, so that only the newest one may change the table. */
+let newest = 0;
 
-async function loadAccounts(fromStart: boolean) {
-  const search = new URLSearchParams({ q: query });
-  if (!fromStart && next) search.set('cursor', next);
-  const page = await api<{ accounts: AdminAccount[]; next: string | null }>('GET', `/v1/admin/accounts?${search}`);
-  const body = byId<HTMLTableElement>('accounts').tBodies[0];
-  const rows = page.accounts.map(accountRow);
-  if (fromStart && rows.length === 0) {
-    const row = document.createElement('tr');
-    const empty = cell(query ? `No accounts match "${query}".` : 'No accounts yet.');
-    empty.colSpan = 6;
-    row.append(empty);
-    rows.push(row);
+/** The first page of a search (no cursor), or the page after `cursor` of the search already shown. */
+async function loadAccounts(query: string, cursor: string | null) {
+  const mine = ++newest;
+  const more = byId<HTMLButtonElement>('more');
+  more.disabled = true;
+  try {
+    const search = new URLSearchParams({ q: query });
+    if (cursor) search.set('cursor', cursor);
+    const page = await api<{ accounts: AdminAccount[]; next: string | null }>('GET', `/v1/admin/accounts?${search}`);
+    // A newer search or page was asked for while this one was on its way: its answer wins, this one is dropped.
+    if (mine !== newest) return;
+    const body = byId<HTMLTableElement>('accounts').tBodies[0];
+    const rows = page.accounts.map(accountRow);
+    if (!cursor && rows.length === 0) {
+      const row = document.createElement('tr');
+      const empty = cell(query ? `No accounts match "${query}".` : 'No accounts yet.');
+      empty.colSpan = 6;
+      row.append(empty);
+      rows.push(row);
+    }
+    if (cursor) body.append(...rows);
+    else body.replaceChildren(...rows);
+    shown = { query, next: page.next };
+    more.hidden = !page.next;
+  } catch (error) {
+    if (mine === newest) throw error; // a dropped load's failure is not worth reporting
+  } finally {
+    if (mine === newest) more.disabled = false;
   }
-  if (fromStart) body.replaceChildren(...rows);
-  else body.append(...rows);
-  next = page.next;
-  byId('more').hidden = !next;
 }
 
 byId<HTMLFormElement>('search').addEventListener('submit', (event) => {
   event.preventDefault();
-  query = byId<HTMLInputElement>('q').value.trim();
-  loadAccounts(true).catch((error) => say(messageOf(error), 'error'));
+  loadAccounts(byId<HTMLInputElement>('q').value.trim(), null).catch((error) => say(messageOf(error), 'error'));
 });
 
 byId('more').addEventListener('click', () => {
-  loadAccounts(false).catch((error) => say(messageOf(error), 'error'));
+  loadAccounts(shown.query, shown.next).catch((error) => say(messageOf(error), 'error'));
 });
 
 // ---------- start ----------
@@ -257,9 +287,9 @@ async function main() {
     else say(messageOf(error), 'error');
     return;
   }
-  byId('admin').hidden = false;
   showStats(stats);
-  await loadAccounts(true).catch((error) => say(messageOf(error), 'error'));
+  byId('admin').hidden = false;
+  await loadAccounts('', null);
 }
 
-main();
+main().catch((error) => say(messageOf(error), 'error'));
