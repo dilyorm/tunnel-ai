@@ -126,6 +126,25 @@ describe('self-hosted relay', () => {
     }
   });
 
+  test('a bad percent escape in a path is a plain 404, not a relay error', async () => {
+    const r = await relay();
+    try {
+      for (const [method, path] of [
+        ['GET', '/v1/invites/%zz'],
+        ['POST', '/v1/invites/%zz/claim'],
+        ['DELETE', '/v1/tunnels/%zz'],
+        ['GET', '/v1/tunnels/t%/files/%zz'],
+        ['POST', '/v1/admin/accounts/%zz/plan'],
+      ]) {
+        const res = await fetch(r.url + path, { method });
+        assert.equal(res.status, 404, `${method} ${path}`);
+        assert.deepEqual(await res.json(), { error: 'Not found.' }, `${method} ${path}`);
+      }
+    } finally {
+      await r.close();
+    }
+  });
+
   test('a device records when it was last seen', async () => {
     const r = await relay();
     try {

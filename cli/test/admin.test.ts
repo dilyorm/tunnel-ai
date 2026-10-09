@@ -18,10 +18,11 @@ import {
 
 describe('admin', () => {
   const out = outbound();
+  const logs: string[] = [];
   let r: TestRelay;
   let boss: Browser;
   before(async () => {
-    r = await relay({ env: FULL_ENV, fetch: out.fetch, maxTunnelsPerDevice: 1 });
+    r = await relay({ env: FULL_ENV, fetch: out.fetch, maxTunnelsPerDevice: 1, log: (line) => logs.push(line) });
     boss = browser(r);
     await signIn(boss, out, ADMIN);
   });
@@ -39,12 +40,18 @@ describe('admin', () => {
         await b.get('/v1/admin/stats'),
         await b.get('/v1/admin/accounts'),
         await grant(b, id, { plan: 'pro' }),
+        // A bad escape in the id is no different: no 500 that would show admin is switched on.
+        await grant(b, '%zz', { plan: 'pro' }),
       ]) {
         assert.equal(res.status, 404);
         assert.deepEqual(res.body, { error: 'Not found.' });
       }
     }
     assert.equal((await user.get('/v1/account')).body.plan, 'free');
+    // Not even the admin gets anything but the plain 404 for it.
+    const bad = await grant(boss, '%zz', { plan: 'pro' });
+    assert.equal(bad.status, 404);
+    assert.deepEqual(bad.body, { error: 'Not found.' });
   });
 
   test('stats: daily series, active agents and machines, plans, revenue and referrers', async () => {
@@ -89,6 +96,11 @@ describe('admin', () => {
 
     assert.equal((await boss.get('/v1/admin/stats?days=500')).body.days.length, 90);
     assert.equal((await boss.get('/v1/admin/stats?days=nonsense')).body.days.length, 30);
+    assert.equal((await boss.get('/v1/admin/stats?days=')).body.days.length, 30);
+    // A number is clamped, not mistaken for a missing value.
+    assert.equal((await boss.get('/v1/admin/stats?days=0')).body.days.length, 1);
+    assert.equal((await boss.get('/v1/admin/stats?days=-7')).body.days.length, 1);
+    assert.equal((await boss.get('/v1/admin/stats?days=7')).body.days.length, 7);
   });
 
   test('accounts: search, newest first, 50 to a page', async () => {
@@ -127,15 +139,22 @@ describe('admin', () => {
     const user = browser(r);
     await signIn(user, out, 'friend@example.com');
     const id = await accountIdOf(r.dataDir, 'friend@example.com');
+    const bossId = await accountIdOf(r.dataDir, ADMIN);
     const until = Date.now() + 7 * DAY;
+    const audit = () => logs.filter((line) => line.startsWith('Admin '));
 
     const given = await grant(boss, id, { plan: 'pro', until });
     assert.equal(given.status, 200);
     assert.deepEqual(given.body, { plan: 'pro', planSource: 'admin', planUntil: until });
     assert.equal((await user.get('/v1/account')).body.limits.tunnels, 20);
+    assert.deepEqual(audit(), [
+      `Admin ${bossId} gave account ${id} the pro plan until ${new Date(until).toISOString()}.`,
+    ]);
 
     const cleared = await grant(boss, id, { plan: null });
     assert.deepEqual(cleared.body, { plan: 'free', planSource: null, planUntil: null });
+    assert.equal(audit().length, 2);
+    assert.equal(audit()[1], `Admin ${bossId} cleared the plan grant on account ${id}.`);
 
     const gold = await grant(boss, id, { plan: 'gold' });
     assert.equal(gold.status, 400);
@@ -146,6 +165,14 @@ describe('admin', () => {
     const nobody = await grant(boss, 'a_nobody', { plan: 'plus' });
     assert.equal(nobody.status, 404);
     assert.equal(nobody.body.error, 'No account with that id.');
+
+    // Only changes are logged, and never an email address.
+    assert.equal(audit().length, 2);
+    assert.ok(!logs.some((line) => line.includes('@')), 'no email address in the log');
+    const forever = await grant(boss, id, { plan: 'plus' });
+    assert.equal(forever.status, 200);
+    assert.equal(audit().at(-1), `Admin ${bossId} gave account ${id} the plus plan until no end.`);
+    await grant(boss, id, { plan: null });
   });
 
   test('a grant from another site is blocked, even with the admin cookie', async () => {
@@ -175,7 +202,7 @@ describe('admin', () => {
       assert.equal(res.status, 200, cursor);
     }
     const id = await accountIdOf(r.dataDir, 'friend@example.com');
-    for (const until of [1e308, 'tomorrow', Date.now() + 1.5, true]) {
+    for (const until of [1e308, 8.7e15, 'tomorrow', Date.now() + 1.5, true]) {
       const res = await grant(boss, id, { plan: 'plus', until });
       assert.equal(res.status, 400, String(until));
       assert.equal(res.body.error, 'The end date must be in the future.');

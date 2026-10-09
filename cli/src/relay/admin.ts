@@ -15,6 +15,12 @@ type Series = (typeof SERIES)[number];
 
 const DAY = 24 * 60 * 60 * 1000;
 const PAGE = 50;
+/** The last moment a JS Date can name. */
+const LAST_DATE = 8.64e15;
+
+/** A whole number of milliseconds that a Date can show. */
+const isDate = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value <= LAST_DATE;
 
 interface AccountRow {
   id: string;
@@ -89,7 +95,10 @@ export function adminRoutes(app: App, accounts: Accounts, recompute: Recompute) 
 
   app.on('GET', '/v1/admin/stats', async (req, res, _params, url) => {
     requireAdmin(req);
-    const span = Math.min(90, Math.max(1, Math.floor(Number(url.searchParams.get('days') ?? 30)) || 30));
+    // A missing or non-numeric `days` means 30; any number is clamped to 1-90 (so 0 is 1).
+    const raw = url.searchParams.get('days')?.trim();
+    const asked = raw ? Math.floor(Number(raw)) : NaN;
+    const span = Number.isNaN(asked) ? 30 : Math.min(90, Math.max(1, asked));
     const now = Date.now();
     const days = Array.from({ length: span }, (_, i) => dayOf(now - (span - 1 - i) * DAY));
     const index = new Map(days.map((day, i) => [day, i]));
@@ -147,22 +156,27 @@ export function adminRoutes(app: App, accounts: Accounts, recompute: Recompute) 
   });
 
   app.on('POST', '/v1/admin/accounts/:id/plan', async (req, res, [id]) => {
-    requireAdmin(req);
+    const admin = requireAdmin(req);
     accounts.requireOrigin(req);
     const input = await json<{ plan?: unknown; until?: unknown }>(req);
     if (!accounts.byId(id)) throw new HttpError(404, 'No account with that id.');
+    // The log line is the audit trail of who changed whose plan: account ids only, never emails or tokens.
     if (input.plan === null) {
       // Back to whatever billing says.
       s.clearGrant.run(id);
       recompute.account(id);
+      app.log(`Admin ${admin.id} cleared the plan grant on account ${id}.`);
     } else {
       const plan = planNamed(input.plan);
       if (!plan) throw new HttpError(400, 'Plan must be free, plus, pro or null.');
       const until = input.until ?? null;
-      if (until !== null && !(typeof until === 'number' && Number.isSafeInteger(until) && until > Date.now())) {
+      if (until !== null && !(isDate(until) && until > Date.now())) {
         throw new HttpError(400, 'The end date must be in the future.');
       }
       s.grant.run(plan, until, id);
+      app.log(
+        `Admin ${admin.id} gave account ${id} the ${plan} plan until ${until === null ? 'no end' : new Date(until).toISOString()}.`,
+      );
     }
     const account = accounts.byId(id)!;
     send(res, 200, { plan: account.plan, planSource: account.plan_source, planUntil: account.plan_until });

@@ -69,6 +69,15 @@ export interface App {
 
 const HOUR = 60 * 60 * 1000;
 
+/** The path parameters, percent-decoded; undefined when one holds a bad escape such as %zz. */
+function decodeParams(raw: string[]): string[] | undefined {
+  try {
+    return raw.map(decodeURIComponent);
+  } catch {
+    return undefined;
+  }
+}
+
 export async function startRelay(options: RelayOptions): Promise<Relay> {
   const store = await openStore(options.dataDir);
   const routes: [string, RegExp, Handler][] = [];
@@ -161,10 +170,13 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       if (target.split('?')[0] !== url.pathname) throw new HttpError(400, 'Bad request path.');
       for (const [method, re, handler] of routes) {
         const match = re.exec(url.pathname);
-        if (match && method === req.method) {
-          await handler(req, res, match.slice(1).map(decodeURIComponent), url);
-          return;
-        }
+        if (!match || method !== req.method) continue;
+        // A bad percent escape (%zz) in a parameter means no route matches: the same plain 404 as any
+        // unknown path, not a 500, so it can't be used to tell which features a relay has switched on.
+        const params = decodeParams(match.slice(1));
+        if (!params) continue;
+        await handler(req, res, params, url);
+        return;
       }
       throw new HttpError(404, 'Not found.');
     } catch (error) {
