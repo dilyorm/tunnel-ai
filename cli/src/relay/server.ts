@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { sha256 } from '../crypto.js';
 import { VERSION } from '../version.js';
 import { accountRoutes, linkRoutes } from './accounts.js';
+import { adminRoutes } from './admin.js';
 import { emailRoutes } from './auth-email.js';
 import { githubRoutes } from './auth-github.js';
 import { billingRoutes, createRecompute, type Billing } from './billing/index.js';
@@ -145,6 +146,8 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       const provider = lemonSqueezy(features.billing, features.publicUrl, app.fetch);
       app.billing = billingRoutes(app, accounts, provider, recompute);
     }
+    // Stats and admin are on together, and admin grants work with billing off.
+    if (features.adminEmails.size > 0) adminRoutes(app, accounts, recompute);
   }
 
   const server = createServer(async (req, res) => {
