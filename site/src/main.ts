@@ -1,10 +1,32 @@
 import './style.css';
 import { mountWormhole, type Message } from './wormhole';
-import { accountLink, beacon } from './page';
+import { accountLink, api, beacon } from './page';
 
-// Count the view and fix the nav first: nothing below (icons, canvas) may stop them by throwing.
+// The Plus and Pro buttons say "Coming soon" in the markup. They become links only when the relay
+// answers that it sells plans; any other answer, or none, leaves them as they are.
+const PLAN_LABELS: Record<string, string> = { plus: 'Get Plus', pro: 'Get Pro' };
+
+async function openPricing() {
+  try {
+    const methods = await api<{ billing?: unknown }>('GET', '/v1/auth/methods');
+    if (methods?.billing !== true) return;
+    for (const [plan, label] of Object.entries(PLAN_LABELS)) {
+      const button = document.querySelector<HTMLAnchorElement>(`.btn[data-plan="${plan}"]`);
+      if (!button) continue;
+      button.href = `/account?plan=${plan}`;
+      button.textContent = label;
+      button.removeAttribute('aria-disabled');
+      button.removeAttribute('role');
+    }
+  } catch {
+    // The relay didn't answer: the buttons stay "Coming soon".
+  }
+}
+
+// Count the view, fix the nav and ask about billing first: nothing below (icons, canvas) may stop them by throwing.
 accountLink();
 beacon();
+void openPricing();
 
 // ---------- pixel icons (8×8 bitmaps) ----------
 

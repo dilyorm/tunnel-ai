@@ -34,10 +34,16 @@ if (has('index.html')) {
   expect(!/\btrial\b|pay as you go/i.test(index), 'index.html still mentions the trial or pay as you go');
   expect(index.includes('data-account-link'), 'the nav has no Sign in link');
   expect(index.includes('Install tunnel from tunnel.dilyor.dev'), 'the "tell your agent" hint is missing');
-  expect(
-    index.includes('href="/account?plan=plus"') && index.includes('href="/account?plan=pro"'),
-    'the Get Plus and Get Pro buttons are missing',
-  );
+  // The plan buttons ship as "Coming soon" (no link); the page turns them into links when the relay has billing.
+  for (const plan of ['plus', 'pro']) {
+    const button = index.match(new RegExp(`<a\\b[^>]*\\bdata-plan="${plan}"[^>]*>[^<]*</a>`))?.[0];
+    expect(button !== undefined, `the ${plan} button is missing`);
+    if (button) {
+      expect(/>\s*Coming soon\s*</.test(button), `the ${plan} button doesn't say Coming soon`);
+      expect(button.includes('aria-disabled="true"'), `the ${plan} button isn't aria-disabled`);
+      expect(!/\bhref=/.test(button), `the ${plan} button is a link before the relay has said it sells plans`);
+    }
+  }
 }
 
 for (const page of PAGES.filter((p) => p !== 'index' && has(`${p}.html`))) {

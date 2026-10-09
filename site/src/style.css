@@ -640,6 +640,14 @@ pre {
   margin-top: 24px;
 }
 
+/* Not for sale yet: the markup's default, until the relay says it has billing. 6.2:1 on --rule. */
+.btn[aria-disabled='true'],
+.btn[aria-disabled='true']:hover {
+  background: var(--rule);
+  color: #5c534d;
+  cursor: default;
+}
+
 .plans-note {
   margin-top: 24px;
   max-width: var(--measure);
