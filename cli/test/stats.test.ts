@@ -1,8 +1,11 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
+import http from 'node:http';
 import { join } from 'node:path';
-import { dayOf, installMetric } from '../src/relay/stats.js';
+import { sha256 } from '../src/crypto.js';
+import type { App } from '../src/relay/server.js';
+import { createStats, dayOf, installMetric } from '../src/relay/stats.js';
 import { DAY, FULL_ENV, PUBLIC_URL, agent, relay, sql, type TestRelay } from './helpers.js';
 
 const BROWSER = 'Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0';
@@ -19,7 +22,22 @@ const hit = (r: TestRelay, userAgent: string, referrer = '') =>
     body: JSON.stringify({ p: '/', r: referrer }),
   }).then((res) => res.status);
 
-const inviteCode = (out: string) => /Invite code: (\S+)/.exec(out)![1];
+/** A request with the path exactly as written; fetch would tidy up backslashes and dot segments first. */
+function raw(r: TestRelay, path: string): Promise<{ status: number; body: string }> {
+  const { hostname, port } = new URL(r.url);
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: hostname, port, path, method: 'GET' }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => (body += chunk));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+const inviteCode =(out: string) => /Invite code: (\S+)/.exec(out)![1];
 
 describe('relay activity', () => {
   test('devices, tunnels, joins, messages and files are counted per day', async () => {
@@ -80,7 +98,64 @@ describe('landing page beacon', () => {
       const visitors = await sql(r.dataDir, 'SELECT * FROM visitors');
       assert.equal(visitors.length, 1);
       assert.match(visitors[0].hash, /^[0-9a-f]{64}$/);
-      assert.doesNotMatch(JSON.stringify(visitors), /127\.0\.0\.1/);
+      // Only a day and a hash are kept: no address, no user agent.
+      assert.deepEqual(Object.keys(visitors[0]).sort(), ['day', 'hash']);
+    } finally {
+      await r.close();
+    }
+  });
+
+  test('a visitor hash depends on the salt, so it cannot be worked back to an address', async () => {
+    const hashFor = async (salt: string) => {
+      const r = await relay({ env: { ...FULL_ENV, TUNNEL_STATS_SALT: salt } });
+      try {
+        assert.equal(await hit(r, BROWSER), 204);
+        return (await sql(r.dataDir, 'SELECT hash FROM visitors'))[0].hash as string;
+      } finally {
+        await r.close();
+      }
+    };
+    const one = await hashFor('salt-one');
+    const again = await hashFor('salt-one');
+    const two = await hashFor('salt-two');
+    assert.equal(one, again, 'the same visitor on the same day hashes the same');
+    assert.notEqual(one, two, 'another salt gives another hash');
+    assert.notEqual(one, sha256(`127.0.0.1\0${BROWSER}`), 'not a bare hash of address and user agent');
+  });
+
+  test('only real host names are kept as referrers', async () => {
+    const r = await relay({ env: FULL_ENV });
+    try {
+      const hostile = [
+        'https://x"onmouseover="alert(1)/',
+        'https://under_score.example/',
+        'https://-lead.example/',
+        `https://${'a'.repeat(250)}.example/`,
+        'ftp://ftp.example/',
+        'not a url',
+      ];
+      for (const referrer of hostile) assert.equal(await hit(r, BROWSER, referrer), 204);
+      assert.equal(await hit(r, BROWSER, 'https://good.example/page'), 204);
+      assert.deepEqual(await sql(r.dataDir, 'SELECT host, n FROM referrers'), [{ host: 'good.example', n: 1 }]);
+      assert.equal((await today(r)).page_views, hostile.length + 1, 'every view is still counted');
+    } finally {
+      await r.close();
+    }
+  });
+
+  test('at most 500 new referrer hosts are kept a day; hosts already kept keep counting', async () => {
+    const r = await relay({ env: FULL_ENV });
+    try {
+      const hosts = Array.from({ length: 500 }, (_, i) => `h${i}.example`);
+      for (let i = 0; i < hosts.length; i += 50) {
+        await Promise.all(hosts.slice(i, i + 50).map((host) => hit(r, BROWSER, `https://${host}/`)));
+      }
+      assert.equal(await hit(r, BROWSER, 'https://extra.example/'), 204);
+      assert.equal(await hit(r, BROWSER, 'https://h0.example/'), 204);
+      assert.deepEqual(await sql(r.dataDir, 'SELECT COUNT(*) AS n FROM referrers'), [{ n: 500 }]);
+      assert.deepEqual(await sql(r.dataDir, "SELECT n FROM referrers WHERE host = 'h0.example'"), [{ n: 2 }]);
+      assert.deepEqual(await sql(r.dataDir, "SELECT n FROM referrers WHERE host = 'extra.example'"), []);
+      assert.equal((await today(r)).page_views, 502, 'views past the cap are still counted');
     } finally {
       await r.close();
     }
@@ -149,10 +224,72 @@ describe('installs', () => {
     }
   });
 
+  test('install counts cannot be reached through a rewritten path', async () => {
+    const r = await relay({ env: FULL_ENV });
+    try {
+      // nginx forwards these under /v1/ as written. The relay's URL parser would turn each into
+      // /internal/install (or /v1/health), so the relay must refuse them before routing.
+      for (const path of [
+        '/v1/\\..\\..\\internal\\install?f=/install.sh',
+        '/v1/%2e%2e/internal/install?f=/install.sh',
+        '/v1/%2E%2e/internal/install?f=/install.sh',
+        '/v1/./health',
+      ]) {
+        const res = await raw(r, path);
+        assert.equal(res.status, 400, path);
+        assert.deepEqual(JSON.parse(res.body), { error: 'Bad request path.' }, path);
+      }
+      assert.equal((await today(r)).installs_sh, undefined, 'nothing was counted');
+      // Control: the same count sent with a clean path is accepted.
+      assert.equal((await raw(r, '/internal/install?f=/install.sh')).status, 204);
+      assert.equal((await today(r)).installs_sh, 1);
+      assert.equal((await raw(r, '/v1/health')).status, 200);
+    } finally {
+      await r.close();
+    }
+  });
+
   test('installMetric reads the path and user agent nginx passes on', () => {
     assert.equal(installMetric('/install.sh', ''), 'installs_sh');
     assert.equal(installMetric('/tunnel-ai.tgz', 'curl/8.5.0'), undefined);
     assert.equal(installMetric('/tunnel-ai-0.2.0-beta.1.tgz', 'npm/11.0.0'), 'installs_npm');
     assert.equal(installMetric('/evil/tunnel-ai.tgz', 'npm/11.0.0'), undefined);
+  });
+});
+
+describe('counter failures', () => {
+  test('a counter that fails never fails the request it describes', () => {
+    let failing = true;
+    const writes: unknown[][] = [];
+    const logs: string[] = [];
+    const statement = {
+      get: () => undefined,
+      all: () => [],
+      run: (...args: unknown[]) => {
+        if (failing) throw new Error('database is locked');
+        writes.push(args);
+        return { changes: 1, lastInsertRowid: 0 };
+      },
+    };
+    const app = {
+      store: { prepare: () => statement },
+      features: { adminEmails: new Set<string>(), publicUrl: PUBLIC_URL },
+      on() {},
+      sweeps: [],
+      log: (line: string) => logs.push(line),
+    } as unknown as App;
+    const stats = createStats(app);
+
+    assert.doesNotThrow(() => stats.count('messages'));
+    assert.doesNotThrow(() => stats.active('member', 'm_secret_id'));
+    assert.equal(logs.length, 2);
+    assert.match(logs[0], /messages/);
+    assert.doesNotMatch(logs.join('\n'), /m_secret_id/, 'ids stay out of the log');
+
+    // The failed write did not mark the agent as stored, so the next request stores it, once.
+    failing = false;
+    stats.active('member', 'm_secret_id');
+    stats.active('member', 'm_secret_id');
+    assert.equal(writes.length, 1);
   });
 });

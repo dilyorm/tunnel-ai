@@ -128,7 +128,12 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   const server = createServer(async (req, res) => {
     try {
       limit(req);
-      const url = new URL(req.url ?? '/', 'http://relay');
+      const target = req.url ?? '/';
+      const url = new URL(target, 'http://relay');
+      // Parsing turns `\` into `/` and resolves `.` and `..` (also as %2e), so a path nginx forwarded as
+      // an ordinary /v1/ path could land on a route nginx never meant to expose (/internal/install).
+      // Every real client sends a canonical path, so anything the parser would rewrite is refused.
+      if (target.split('?')[0] !== url.pathname) throw new HttpError(400, 'Bad request path.');
       for (const [method, re, handler] of routes) {
         const match = re.exec(url.pathname);
         if (match && method === req.method) {

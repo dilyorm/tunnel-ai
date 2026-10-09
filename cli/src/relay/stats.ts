@@ -37,6 +37,10 @@ export const NO_STATS: Stats = { count() {}, active() {} };
 const DAY = 24 * 60 * 60 * 1000;
 const BOT = /bot|crawl|spider|slurp|preview|headless/i;
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+// A referrer is stored only if it looks like a real host name. Anyone can send the beacon, so the
+// table must not take arbitrary strings, and it takes only so many new hosts a day.
+const HOST = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/;
+const MAX_REFERRERS_PER_DAY = 500;
 
 /** The UTC day, as stored: 'YYYY-MM-DD'. */
 export const dayOf = (at = Date.now()) => new Date(at).toISOString().slice(0, 10);
@@ -56,7 +60,8 @@ function referrerHost(raw: Buffer): string | undefined {
     const { r } = JSON.parse(raw.toString('utf8')) as { r?: unknown };
     if (typeof r !== 'string' || !r) return undefined;
     const url = new URL(r);
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url.hostname.slice(0, 253) : undefined;
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
+    return url.hostname.length <= 253 && HOST.test(url.hostname) ? url.hostname : undefined;
   } catch {
     return undefined;
   }
@@ -83,23 +88,39 @@ export function createStats(app: App): Stats {
     ],
   };
 
-  // Ids already written today, so a busy agent costs one insert a day, not one per request.
+  // Ids already written today, so a busy agent costs one insert a day, not one per request, and the
+  // referrer hosts already stored today, for the daily cap.
   let today = '';
   const seen = new Set<string>();
+  const referrers = new Set<string>();
 
+  function rollover(day: string) {
+    if (day === today) return;
+    today = day;
+    seen.clear();
+    referrers.clear();
+  }
+
+  // Counting must never fail the request it describes: by the time a counter runs, the tunnel, message
+  // or file is already saved, and a 500 would make the client retry or lose what the relay handed out.
   const stats: Stats = {
     count(metric, n = 1) {
-      if (n > 0) s.bump.run(dayOf(), metric, n);
+      try {
+        if (n > 0) s.bump.run(dayOf(), metric, n);
+      } catch (error) {
+        app.log(`stats: could not count ${metric}: ${(error as Error).message}`);
+      }
     },
     active(kind, id) {
-      const day = dayOf();
-      if (day !== today) {
-        today = day;
-        seen.clear();
+      try {
+        const day = dayOf();
+        rollover(day);
+        if (seen.has(id)) return;
+        (kind === 'device' ? s.device : s.member).run(day, id);
+        seen.add(id); // only once it is stored, so a failed write is tried again on the next request
+      } catch (error) {
+        app.log(`stats: could not mark a ${kind} active: ${(error as Error).message}`);
       }
-      if (seen.has(id)) return;
-      seen.add(id);
-      (kind === 'device' ? s.device : s.member).run(day, id);
     },
   };
 
@@ -118,7 +139,14 @@ export function createStats(app: App): Stats {
       if (Number(s.visitor.run(day, hash).changes) > 0) stats.count('unique_visitors');
     }
     const host = referrerHost(raw);
-    if (host && host !== ownHost) s.referrer.run(day, host);
+    if (host && host !== ownHost) {
+      rollover(day);
+      // A host already stored today always counts; new ones stop at the cap. The view is counted either way.
+      if (referrers.has(host) || referrers.size < MAX_REFERRERS_PER_DAY) {
+        s.referrer.run(day, host);
+        referrers.add(host);
+      }
+    }
     send(res, 204);
   });
 
