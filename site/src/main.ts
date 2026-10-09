@@ -2,6 +2,10 @@ import './style.css';
 import { mountWormhole, type Message } from './wormhole';
 import { accountLink, beacon } from './page';
 
+// Count the view and fix the nav first: nothing below (icons, canvas) may stop them by throwing.
+accountLink();
+beacon();
+
 // ---------- pixel icons (8×8 bitmaps) ----------
 
 const ICONS: Record<string, string[]> = {
@@ -202,8 +206,3 @@ if (canvas && caption && dirEl && textEl) {
     },
   });
 }
-
-// ---------- account link and page view ----------
-
-accountLink();
-beacon();

@@ -1,6 +1,6 @@
 import './style.css';
 import './app.css';
-import { ApiError, api, beacon, button, byId, formatBytes, formatDay, messageOf, say, title } from './page';
+import { ApiError, api, button, byId, formatBytes, formatDay, messageOf, say, title } from './page';
 
 // The account page. Signed out: the sign-in methods this relay has. Signed in: plan, usage,
 // linked machines and billing. It also finishes flows that start elsewhere, via the address bar:
@@ -79,13 +79,15 @@ async function checkout(plan: 'plus' | 'pro') {
 
 function showSignedOut(methods: Methods) {
   byId('signed-out').hidden = false;
+  const plan = wantedPlan();
+  // With billing off there is nothing to come back for: say so once, and don't carry ?plan through sign-in.
+  if (plan && !methods.billing) forget('plan');
   const github = byId<HTMLAnchorElement>('github');
   github.href = `/v1/auth/github/start?return=${encodeURIComponent(here())}`;
   github.hidden = !methods.github;
   const form = byId<HTMLFormElement>('email-form');
   form.hidden = !methods.email;
 
-  const plan = wantedPlan();
   if (!methods.github && !methods.email) say("Sign-in isn't set up on this relay yet.");
   else if (params.has('link')) say('Sign in to link your machine.');
   else if (plan) say(methods.billing ? `Sign in to get ${title(plan)}.` : NO_PAID_PLANS);
@@ -286,7 +288,8 @@ async function show() {
   const failed = params.get('error');
   if (failed) {
     forget('error');
-    say(ERRORS[failed] ?? 'Sign-in failed. Try again.', 'error');
+    // ?error=constructor must not find Object.prototype's members.
+    say(Object.hasOwn(ERRORS, failed) ? ERRORS[failed] : 'Sign-in failed. Try again.', 'error');
   }
   const upgraded = params.has('upgraded');
   if (upgraded) {
@@ -343,8 +346,6 @@ async function show() {
 }
 
 async function main() {
-  beacon();
-
   const login = params.get('login');
   if (login) {
     // Out of the address bar before anything is sent, so the token can't linger in the URL or history.

@@ -1,7 +1,7 @@
 import './style.css';
 import './app.css';
 import { lineChart, type Line } from './chart';
-import { ApiError, accountLink, api, beacon, button, byId, formatDay, messageOf, say, title } from './page';
+import { ApiError, accountLink, api, button, byId, formatDay, messageOf, say, title } from './page';
 
 // The relay owner's page: today's numbers, who is active, plans and revenue, 30-day charts,
 // referrers, and the accounts table with plan grants. The API answers 404 to everyone else.
@@ -137,10 +137,6 @@ function showStats(stats: Stats) {
 
 // ---------- accounts ----------
 
-/** A grant's last day as the date picker shows it. The plan ends with that day in UTC, so name that day, not the reader's local one. */
-const lastDay = (ms: number) =>
-  new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
-
 function grantPath(account: AdminAccount) {
   return `/v1/admin/accounts/${encodeURIComponent(account.id)}/plan`;
 }
@@ -185,7 +181,7 @@ function planControl(account: AdminAccount, saved: (account: AdminAccount) => vo
         }
         const grant = await api<Grant>('POST', grantPath(account), { plan: select.value, until: end });
         saved({ ...account, ...grant });
-        say(`${account.email} is on ${title(grant.plan)}${grant.planUntil ? ` until ${lastDay(grant.planUntil)}` : ''}.`);
+        say(`${account.email} is on ${title(grant.plan)}${grant.planUntil ? ` until ${formatDay(grant.planUntil)}` : ''}.`);
       }),
     ),
   );
@@ -278,7 +274,6 @@ byId('more').addEventListener('click', () => {
 
 async function main() {
   accountLink();
-  beacon();
   let stats: Stats;
   try {
     stats = await api<Stats>('GET', '/v1/admin/stats?days=30');

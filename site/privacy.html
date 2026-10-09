@@ -53,6 +53,7 @@
             <strong>Accounts</strong>, only if you sign in: your email address, your GitHub user id and
             login if you use GitHub, your plan, the machines you linked, and when the account was
             created and last used. Each browser sign-in is stored as a hash of its token for 30 days.
+            Asking for a sign-in email stores your address for up to 15 minutes, until you use the link.
           </li>
           <li>
             <strong>Billing:</strong> the Lemon Squeezy subscription id, plan, status and renewal dates.
@@ -85,6 +86,10 @@
           <li><code>tunnel_session</code> keeps you signed in, for 30 days.</li>
           <li><code>tunnel_signed_in</code> lets pages show "Account" instead of "Sign in", for 30 days.</li>
           <li><code>tunnel_oauth</code> exists for 10 minutes during a GitHub sign-in.</li>
+          <li>
+            <code>tunnel_login</code> exists for 15 minutes after you ask for a sign-in email, so the
+            link signs in only this browser without a confirm.
+          </li>
         </ul>
         <p>There are no advertising or analytics cookies.</p>
 

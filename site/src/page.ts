@@ -63,9 +63,13 @@ export function formatBytes(n: number): string {
 
 export const title = (plan: string) => plan.charAt(0).toUpperCase() + plan.slice(1);
 
-/** A date in the reader's own format, e.g. 9 Oct 2026. */
+/**
+ * A date in the reader's own format, e.g. 9 Oct 2026, always the UTC day. The relay keeps and ends things
+ * by UTC days (an admin grant runs to the end of its last day, UTC), so every page names the same day
+ * whatever time zone the reader is in.
+ */
 export const formatDay = (ms: number) =>
-  new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 export const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
