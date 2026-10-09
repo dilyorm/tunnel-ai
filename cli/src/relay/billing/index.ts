@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { IncomingHttpHeaders } from 'node:http';
+import type { IncomingHttpHeaders, IncomingMessage } from 'node:http';
 import type { Accounts } from '../accounts.js';
 import type { Account, Store } from '../db.js';
 import { HttpError, LIMITS, body, json, send } from '../http.js';
@@ -133,12 +133,13 @@ export function billingRoutes(app: App, accounts: Accounts, provider: BillingPro
       `UPDATE subscriptions SET status = ?, active = 0, renews_at = ?, ends_at = ?, updated = ?
         WHERE provider = ? AND provider_id = ? AND updated <= ?`,
     ),
-    // The WHERE makes an event older than the stored row a no-op (changes = 0).
+    // The WHERE makes an event older than the stored row a no-op (changes = 0). A subscription never
+    // changes owner: account_id is set on insert only, so a later event naming another account can't move it.
     upsert: store.prepare(
       `INSERT INTO subscriptions (provider, provider_id, account_id, plan, status, active, renews_at, ends_at, updated)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (provider, provider_id) DO UPDATE SET
-         account_id = excluded.account_id, plan = excluded.plan, status = excluded.status,
+         plan = excluded.plan, status = excluded.status,
          active = excluded.active, renews_at = excluded.renews_at, ends_at = excluded.ends_at,
          updated = excluded.updated
        WHERE excluded.updated >= subscriptions.updated`,
@@ -195,7 +196,18 @@ export function billingRoutes(app: App, accounts: Accounts, provider: BillingPro
     send(res, 200, await checkout(account, input));
   });
 
+  // A cookie rides along on a cross-site GET navigation (SameSite=Lax), so another site could make a
+  // signed-in visitor's browser spend the account's billing budget here. Only our own pages may ask.
+  // A same-origin GET fetch carries Sec-Fetch-Site: same-origin (browsers add it to every request to an
+  // https page or localhost) and may carry no Origin, so either header is enough. Neither: refused.
+  const publicUrl = app.features.publicUrl!;
+  function requireSameOrigin(req: IncomingMessage) {
+    if (req.headers.origin === publicUrl || req.headers['sec-fetch-site'] === 'same-origin') return;
+    throw new HttpError(403, 'This request came from another site, so it was blocked.');
+  }
+
   app.on('GET', '/v1/account/portal', async (req, res) => {
+    requireSameOrigin(req);
     const account = accounts.requireSession(req);
     limitCalls(req, account.id);
     const sub = s.portal.get(account.id, provider.name, Date.now());
@@ -211,13 +223,17 @@ export function billingRoutes(app: App, accounts: Accounts, provider: BillingPro
   });
 
   /** What an event does to the stored subscriptions and the account's plan. Runs inside apply's transaction. */
-  function place(event: BillingEvent): { outcome: string; changed: boolean } {
-    const skip = (outcome: string) => ({ outcome, changed: false });
+  function place(event: BillingEvent): { outcome: string; remember: boolean } {
+    const done = (outcome: string, remember = false) => ({ outcome, remember });
+    // A subscription belongs to the account it was first seen for. The account named in a later event is
+    // ignored, so a (signed) event can't hand a subscription, or its plan, to someone else.
+    const known = s.tracked.get(provider.name, event.subscriptionId);
     if (!event.plan) {
       // Not one of our plans. A subscription we already track that moved to such a product no longer
       // gives a plan: end it, or a customer who switched to it and cancelled would keep their old plan.
-      const known = s.tracked.get(provider.name, event.subscriptionId);
-      if (!known) return skip('not a tunnel plan, skipped');
+      // Ending is repeatable and the event is not remembered: if the owner mistyped a variant id, the
+      // provider's resend after the fix must still be applied.
+      if (!known) return done('not a tunnel plan, skipped');
       const changes = s.retire.run(
         event.status,
         event.renewsAt,
@@ -227,15 +243,16 @@ export function billingRoutes(app: App, accounts: Accounts, provider: BillingPro
         event.subscriptionId,
         event.updatedAt,
       ).changes;
-      if (Number(changes) === 0) return skip('older than what we have, skipped');
+      if (Number(changes) === 0) return done('older than what we have, skipped');
       recompute.account(known.account_id);
-      return { outcome: 'not a tunnel plan, subscription ended', changed: true };
+      return done('not a tunnel plan, subscription ended');
     }
-    if (!s.hasAccount.get(event.accountId)) return skip('unknown account, skipped');
+    const owner = known?.account_id ?? event.accountId;
+    if (!known && !s.hasAccount.get(owner)) return done('unknown account, skipped');
     const changes = s.upsert.run(
       provider.name,
       event.subscriptionId,
-      event.accountId,
+      owner,
       event.plan,
       event.status,
       event.active ? 1 : 0,
@@ -243,9 +260,9 @@ export function billingRoutes(app: App, accounts: Accounts, provider: BillingPro
       event.endsAt,
       event.updatedAt,
     ).changes;
-    if (Number(changes) === 0) return skip('older than what we have, skipped');
-    recompute.account(event.accountId);
-    return { outcome: 'applied', changed: true };
+    if (Number(changes) === 0) return done('older than what we have, skipped');
+    recompute.account(owner);
+    return done('applied', true);
   }
 
   /** Store the event and update the account. Returns what happened, for the log. */
@@ -257,9 +274,9 @@ export function billingRoutes(app: App, accounts: Accounts, provider: BillingPro
       if (s.seen.get(id)) outcome = 'duplicate, skipped';
       else {
         const placed = place(event);
-        // Only an event that changed something is remembered. A skipped one may become valid once the
+        // Only an event that was applied is remembered. A skipped or ending one may become valid once the
         // owner fixes a mistake (a variant id, say), and the provider's resend must not read as a duplicate.
-        if (placed.changed) s.remember.run(id, Date.now());
+        if (placed.remember) s.remember.run(id, Date.now());
         outcome = placed.outcome;
       }
       store.db.exec('COMMIT');

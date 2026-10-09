@@ -26,11 +26,18 @@ function pageLink(value: unknown, what: string): string {
   return value;
 }
 
-/** The first error's explanation from a JSON:API error reply, on one short line. Never the request. */
-async function detailOf(res: Response): Promise<string | undefined> {
+/**
+ * The first error's explanation from a JSON:API error reply, on one short line, for the log. It is the
+ * provider's free text and can quote the customer's email, so emails (and our API key, should it ever
+ * be echoed) are blanked out first; the length cap comes after, so it can't cut a secret in half.
+ */
+async function detailOf(res: Response, apiKey: string): Promise<string | undefined> {
   try {
     const detail = ((await res.json()) as { errors?: { detail?: unknown }[] }).errors?.[0]?.detail;
-    return typeof detail === 'string' && detail.trim() ? detail.replace(/\s+/g, ' ').trim().slice(0, 200) : undefined;
+    if (typeof detail !== 'string') return undefined;
+    const text = detail.replace(/\s+/g, ' ').trim();
+    const line = (apiKey ? text.split(apiKey).join('[key]') : text).replace(/[^\s@]+@[^\s@]+/g, '[email]');
+    return line ? line.slice(0, 200) : undefined;
   } catch {
     return undefined;
   }
@@ -64,7 +71,7 @@ export function lemonSqueezy(
     if (!res.ok) {
       throw new BillingError(
         `Lemon Squeezy answered ${res.status} to ${method} ${path.split('/')[1]}`,
-        await detailOf(res),
+        await detailOf(res, config.apiKey),
       );
     }
     return (await res.json()) as T;

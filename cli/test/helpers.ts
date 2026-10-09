@@ -148,14 +148,19 @@ export interface Page {
 
 export type Browser = ReturnType<typeof browser>;
 
-/** A browser on `origin`: keeps cookies, sends Origin on POSTs, and does not follow redirects. */
+/**
+ * A browser on `origin`: keeps cookies, sends Origin on POSTs, and does not follow redirects.
+ * `extra` adds request headers. A page's own fetch of a GET route that checks the request's origin
+ * (Manage billing) carries `sec-fetch-site: same-origin`, so tests for such a route pass it here.
+ */
 export function browser(r: { url: string }, origin = PUBLIC_URL) {
   const jar = new Map<string, string>();
-  async function request(method: string, path: string, data?: unknown): Promise<Page> {
+  async function request(method: string, path: string, data?: unknown, extra: Record<string, string> = {}): Promise<Page> {
     const headers: Record<string, string> = {};
     if (jar.size) headers.cookie = [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (method !== 'GET') headers.origin = origin;
     if (data !== undefined) headers['content-type'] = 'application/json';
+    Object.assign(headers, extra);
     const res = await fetch(r.url + path, {
       method,
       headers,
@@ -181,7 +186,7 @@ export function browser(r: { url: string }, origin = PUBLIC_URL) {
   return {
     jar,
     request,
-    get: (path: string) => request('GET', path),
+    get: (path: string, extra?: Record<string, string>) => request('GET', path, undefined, extra),
     post: (path: string, data: unknown = {}) => request('POST', path, data),
   };
 }
