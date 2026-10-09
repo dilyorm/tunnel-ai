@@ -137,17 +137,34 @@ export async function accountCmd(ctx: Ctx) {
   ctx.out(`History  ${limits.historyDays} days`);
 }
 
+/** Whether the relay sells plans. A relay without accounts answers 404 and doesn't. */
+async function sellsPlans(relay: string): Promise<boolean> {
+  try {
+    const methods = await new RelayClient(relay).json<{ billing?: boolean }>('GET', '/v1/auth/methods');
+    return Boolean(methods.billing);
+  } catch (error) {
+    if (statusOf(error) === 404) return false;
+    throw error;
+  }
+}
+
 export async function upgradeCmd(ctx: Ctx, args: string[]) {
   if (args.length === 0) {
+    const relay = relayFor(ctx);
+    const billing = await sellsPlans(relay);
     const plans = (['plus', 'pro'] as const).map((plan) => ({ plan, price: PRICES[plan], ...PLANS[plan] }));
-    if (ctx.flags.json) return ctx.out(JSON.stringify({ plans }));
+    if (ctx.flags.json) return ctx.out(JSON.stringify({ plans, billing }));
     for (const p of plans) {
       ctx.out(
         `${title(p.plan).padEnd(5)} $${p.price}/month  ${p.tunnels} tunnels, files up to ${formatBytes(p.fileBytes)}, ` +
           `${p.historyDays} days of history, ${formatBytes(p.storageBytes)} of storage`,
       );
     }
-    ctx.out('Run `tunnel upgrade plus` or `tunnel upgrade pro` to pay.');
+    ctx.out(
+      billing
+        ? 'Run `tunnel upgrade plus` or `tunnel upgrade pro` to pay.'
+        : `Paid plans aren't open on ${relay} yet.`,
+    );
     return;
   }
   const plan = planNamed(args[0]);

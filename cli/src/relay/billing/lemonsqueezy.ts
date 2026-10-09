@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Features } from '../config.js';
-import type { BillingProvider, PaidPlan } from './index.js';
+import { BillingError, type BillingProvider, type PaidPlan } from './index.js';
 
 // Lemon Squeezy, the merchant of record: it sells the subscription, charges tax and sends invoices.
 // Its API is JSON:API. Webhooks are signed with an HMAC of the raw body in X-Signature.
@@ -19,6 +19,22 @@ const EVENTS = new Set([
 
 /** Statuses where the customer has what they paid for. "cancelled" also counts until ends_at. */
 const ACTIVE = new Set(['on_trial', 'active', 'past_due']);
+
+/** A link we can hand to a customer. Lemon Squeezy serves its pages over https; anything else is a broken reply. */
+function pageLink(value: unknown, what: string): string {
+  if (typeof value !== 'string' || !value.startsWith('https://')) throw new Error(`Lemon Squeezy sent no ${what} link`);
+  return value;
+}
+
+/** The first error's explanation from a JSON:API error reply, on one short line. Never the request. */
+async function detailOf(res: Response): Promise<string | undefined> {
+  try {
+    const detail = ((await res.json()) as { errors?: { detail?: unknown }[] }).errors?.[0]?.detail;
+    return typeof detail === 'string' && detail.trim() ? detail.replace(/\s+/g, ' ').trim().slice(0, 200) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export function lemonSqueezy(
   config: NonNullable<Features['billing']>,
@@ -45,7 +61,12 @@ export function lemonSqueezy(
       body: payload === undefined ? undefined : JSON.stringify(payload),
       signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) throw new Error(`Lemon Squeezy answered ${res.status} to ${method} ${path.split('/')[1]}`);
+    if (!res.ok) {
+      throw new BillingError(
+        `Lemon Squeezy answered ${res.status} to ${method} ${path.split('/')[1]}`,
+        await detailOf(res),
+      );
+    }
     return (await res.json()) as T;
   }
 
@@ -53,7 +74,7 @@ export function lemonSqueezy(
     name: 'lemonsqueezy',
 
     async checkoutUrl(account, plan) {
-      const reply = await call<{ data: { attributes: { url: string } } }>('POST', '/checkouts', {
+      const reply = await call<{ data?: { attributes?: { url?: unknown } } }>('POST', '/checkouts', {
         data: {
           type: 'checkouts',
           attributes: {
@@ -66,15 +87,15 @@ export function lemonSqueezy(
           },
         },
       });
-      return reply.data.attributes.url;
+      return pageLink(reply?.data?.attributes?.url, 'checkout');
     },
 
     async portalUrl(subscriptionId) {
-      const reply = await call<{ data: { attributes: { urls: { customer_portal: string } } } }>(
+      const reply = await call<{ data?: { attributes?: { urls?: { customer_portal?: unknown } } } }>(
         'GET',
         `/subscriptions/${encodeURIComponent(subscriptionId)}`,
       );
-      return reply.data.attributes.urls.customer_portal;
+      return pageLink(reply?.data?.attributes?.urls?.customer_portal, 'billing portal');
     },
 
     verify(raw, headers) {

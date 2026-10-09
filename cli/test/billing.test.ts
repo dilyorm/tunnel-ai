@@ -14,11 +14,17 @@ import {
   signIn,
   sql,
   type Browser,
+  type Route,
   type TestRelay,
 } from './helpers.js';
 
 const CHECKOUTS = 'https://api.lemonsqueezy.com/v1/checkouts';
 const SUBSCRIPTIONS = 'https://api.lemonsqueezy.com/v1/subscriptions/';
+
+const TABLE =
+  'Plus  $5/month  10 tunnels, files up to 50 MB, 30 days of history, 2 GB of storage\n' +
+  'Pro   $9/month  20 tunnels, files up to 100 MB, 30 days of history, 5 GB of storage\n';
+const BUDGET = 'Too many billing requests. Wait ten minutes and try again.';
 
 // Lemon Squeezy's clock: each event built here is one minute newer than the one before.
 let clock = Date.parse('2026-10-01T00:00:00Z');
@@ -64,8 +70,8 @@ describe('billing', () => {
   });
   after(() => r.close());
 
-  const deliver = (raw: string, secret = 'whsec') =>
-    fetch(`${r.url}/v1/billing/webhook`, {
+  const deliver = (raw: string, secret = 'whsec', url = r.url) =>
+    fetch(`${url}/v1/billing/webhook`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -221,12 +227,8 @@ describe('billing', () => {
 
   test('tunnel upgrade prints both prices, or opens checkout for a linked machine', async () => {
     const a = agent(() => r, 'upgrade');
-    assert.equal(
-      (await a.run('upgrade')).out,
-      'Plus  $5/month  10 tunnels, files up to 50 MB, 30 days of history, 2 GB of storage\n' +
-        'Pro   $9/month  20 tunnels, files up to 100 MB, 30 days of history, 5 GB of storage\n' +
-        'Run `tunnel upgrade plus` or `tunnel upgrade pro` to pay.\n',
-    );
+    assert.equal((await a.run('upgrade')).out, TABLE + 'Run `tunnel upgrade plus` or `tunnel upgrade pro` to pay.\n');
+    assert.equal(JSON.parse((await a.run('upgrade', '--json')).out).billing, true);
     assert.equal((await a.run('upgrade', 'gold')).code, 2);
     const unlinked = await a.run('upgrade', 'plus');
     assert.equal(unlinked.code, 1);
@@ -251,5 +253,193 @@ describe('billing', () => {
     } finally {
       out.table[CHECKOUTS] = checkouts;
     }
+  });
+
+  /** Answer `url` with `route` while `fn` runs. */
+  async function answering<T>(url: string, route: Route, fn: () => Promise<T>): Promise<T> {
+    const saved = out.table[url];
+    out.table[url] = route;
+    try {
+      return await fn();
+    } finally {
+      out.table[url] = saved;
+    }
+  }
+
+  test('an event skipped for a setup mistake applies when the provider resends it after the fix', async () => {
+    const open: TestRelay[] = [];
+    try {
+      const first = await relay({ env: FULL_ENV, fetch: out.fetch, log: (line) => lines.push(line) });
+      open.push(first);
+      const target = { url: first.url };
+      const b = browser(target);
+      await signIn(b, out, 'golive@example.com');
+      const id = await accountIdOf(first.dataDir, 'golive@example.com');
+      // Variant 777 is not one of our plans yet: the owner left the wrong ids in the environment.
+      const raw = lemon('subscription_created', id, { variant_id: 777 }, 'sub_golive');
+      const remembered = async () => (await sql(first.dataDir, 'SELECT COUNT(*) AS n FROM billing_events'))[0].n;
+      const before = await remembered();
+      assert.equal((await deliver(raw, 'whsec', first.url)).status, 200);
+      assert.equal(await remembered(), before);
+      assert.equal(await planOf(b), 'free');
+      logged(`Billing subscription_created (active) for ${id}: not a tunnel plan, skipped.`);
+      await first.close();
+      open.pop();
+
+      const second = await relay({
+        dataDir: first.dataDir,
+        env: { ...FULL_ENV, LEMONSQUEEZY_VARIANT_PLUS: '777' },
+        fetch: out.fetch,
+        log: (line) => lines.push(line),
+      });
+      open.push(second);
+      target.url = second.url;
+      assert.equal((await deliver(raw, 'whsec', second.url)).status, 200);
+      assert.equal(await planOf(b), 'plus');
+      logged(`Billing subscription_created (active) for ${id}: applied.`);
+    } finally {
+      for (const each of open) await each.close();
+    }
+  });
+
+  test('a subscription that moves to a product we do not sell stops giving a plan', async () => {
+    const [b, id] = await customer('switched@example.com');
+    // Built before the create, so it is the older of the two.
+    const stale = lemon('subscription_updated', id, { variant_id: 999 }, 'sub_switch');
+    assert.equal((await deliver(lemon('subscription_created', id, {}, 'sub_switch'))).status, 200);
+    assert.equal(await planOf(b), 'pro');
+    assert.equal((await deliver(stale)).status, 200);
+    assert.equal(await planOf(b), 'pro');
+    logged(`Billing subscription_updated (active) for ${id}: older than what we have, skipped.`);
+
+    const moved = lemon('subscription_updated', id, { variant_id: 999 }, 'sub_switch');
+    assert.equal((await deliver(moved)).status, 200);
+    const me = (await b.get('/v1/account')).body;
+    assert.equal(me.plan, 'free');
+    assert.equal(me.planSource, null);
+    assert.equal(me.subscription, null);
+    logged(`Billing subscription_updated (active) for ${id}: not a tunnel plan, subscription ended.`);
+    const [row] = await sql(r.dataDir, "SELECT plan, active FROM subscriptions WHERE provider_id = 'sub_switch'");
+    assert.deepEqual({ ...row }, { plan: 'pro', active: 0 });
+  });
+
+  test('checkout and Manage billing share a budget per account', async () => {
+    const [b] = await customer('busy@example.com');
+    const a = agent(() => r, 'busy-cli');
+    assert.equal((await linkMachine(a, b)).code, 0);
+    const checkouts = () => out.calls.filter((c) => c.url === CHECKOUTS).length;
+    for (let i = 0; i < 8; i++) assert.equal((await b.post('/v1/account/checkout', { plan: 'plus' })).status, 200);
+    for (let i = 0; i < 2; i++) assert.equal((await a.run('upgrade', 'plus')).code, 0);
+    const calls = checkouts();
+
+    const blocked = await b.post('/v1/account/checkout', { plan: 'plus' });
+    assert.equal(blocked.status, 429);
+    assert.equal(blocked.body.error, BUDGET);
+    assert.equal((await b.get('/v1/account/portal')).status, 429);
+    const cli = await a.run('upgrade', 'plus');
+    assert.equal(cli.code, 1);
+    assert.equal(cli.err, `${BUDGET}\n`);
+    assert.equal(checkouts(), calls);
+
+    // Other accounts have their own budget.
+    const [other] = await customer('calm@example.com');
+    assert.equal((await other.post('/v1/account/checkout', { plan: 'plus' })).status, 200);
+
+    // A machine that is not linked is counted by its own id.
+    const lost = agent(() => r, 'unlinked-cli');
+    for (let i = 0; i < 10; i++) assert.match((await lost.run('upgrade', 'plus')).err, /isn't linked/);
+    assert.equal((await lost.run('upgrade', 'plus')).err, `${BUDGET}\n`);
+  });
+
+  test('callers who are not signed in cannot use up an account budget', async () => {
+    const stranger = browser(r);
+    for (let i = 0; i < 12; i++) assert.equal((await stranger.post('/v1/account/checkout', { plan: 'plus' })).status, 401);
+    assert.equal((await stranger.get('/v1/account/portal')).status, 401);
+    const nobody = await fetch(`${r.url}/v1/devices/me/checkout`, { method: 'POST', body: '{}' });
+    assert.equal(nobody.status, 401);
+  });
+
+  test('a reply without an https link is a 502, not an empty link', async () => {
+    const [b, id] = await customer('badlink@example.com');
+    for (const attributes of [{}, { url: 'http://pay.example/plain' }, { url: 42 }, { url: '' }]) {
+      const res = await answering(CHECKOUTS, () => Response.json({ data: { attributes } }), () =>
+        b.post('/v1/account/checkout', { plan: 'plus' }),
+      );
+      assert.equal(res.status, 502, JSON.stringify(attributes));
+      assert.equal(res.body.error, "The payment page didn't load. Try again in a minute.");
+    }
+
+    assert.equal((await deliver(lemon('subscription_created', id, {}, 'sub_badlink'))).status, 200);
+    for (const urls of [{}, { customer_portal: 'http://pay.example/plain' }, { customer_portal: null }]) {
+      const res = await answering(SUBSCRIPTIONS, () => Response.json({ data: { attributes: { urls } } }), () =>
+        b.get('/v1/account/portal'),
+      );
+      assert.equal(res.status, 502, JSON.stringify(urls));
+      assert.equal(res.body.error, "The billing page didn't load. Try again in a minute.");
+    }
+  });
+
+  test('Manage billing opens the live subscription, and the newest one only when none is live', async () => {
+    const [b, id] = await customer('twosubs@example.com');
+    const ended = { status: 'expired', ends_at: '2026-10-01T00:00:00.000000Z' };
+    assert.equal((await deliver(lemon('subscription_created', id, {}, 'sub_live'))).status, 200);
+    assert.equal((await deliver(lemon('subscription_expired', id, ended, 'sub_ended'))).status, 200);
+    assert.deepEqual((await b.get('/v1/account/portal')).body, { url: 'https://pay.example/portal/sub_live' });
+
+    const [c, cid] = await customer('onlyended@example.com');
+    assert.equal((await deliver(lemon('subscription_expired', cid, ended, 'sub_gone'))).status, 200);
+    assert.deepEqual((await c.get('/v1/account/portal')).body, { url: 'https://pay.example/portal/sub_gone' });
+  });
+
+  test('a Lemon Squeezy error is logged with its own explanation and nothing secret', async () => {
+    const [b] = await customer('detail@example.com');
+    const res = await answering(
+      CHECKOUTS,
+      () => Response.json({ errors: [{ detail: 'The selected variant is archived.' }] }, { status: 422 }),
+      () => b.post('/v1/account/checkout', { plan: 'plus' }),
+    );
+    assert.equal(res.status, 502);
+    logged('Checkout failed: Lemon Squeezy answered 422 to POST checkouts: The selected variant is archived.');
+    for (const line of lines.filter((l) => l.startsWith('Checkout failed'))) {
+      assert.ok(!/ls_test|detail@example\.com|whsec/.test(line), line);
+    }
+  });
+});
+
+describe('billing switched off', () => {
+  const out = outbound();
+  const withoutBilling = Object.fromEntries(Object.entries(FULL_ENV).filter(([key]) => !key.startsWith('LEMONSQUEEZY_')));
+  let accounts: TestRelay;
+  let plain: TestRelay;
+  before(async () => {
+    accounts = await relay({ env: withoutBilling, fetch: out.fetch, linkPollSeconds: 0.05 });
+    plain = await relay();
+  });
+  after(async () => {
+    await accounts.close();
+    await plain.close();
+  });
+
+  test('tunnel upgrade lists the plans but says paid plans are not open', async () => {
+    for (const target of [accounts, plain]) {
+      const a = agent(() => target, 'off');
+      assert.equal((await a.run('upgrade')).out, TABLE + `Paid plans aren't open on ${target.url} yet.\n`);
+      assert.equal(JSON.parse((await a.run('upgrade', '--json')).out).billing, false);
+      const pay = await a.run('upgrade', 'plus');
+      assert.equal(pay.code, 1);
+      assert.equal(pay.err, `The relay at ${target.url} doesn't sell plans.\n`);
+    }
+  });
+
+  test('the billing routes do not exist and the account has no subscription', async () => {
+    const b = browser(accounts);
+    await signIn(b, out, 'free@example.com');
+    assert.equal((await b.post('/v1/account/checkout', { plan: 'pro' })).status, 404);
+    assert.equal((await b.get('/v1/account/portal')).status, 404);
+    const hook = await fetch(`${accounts.url}/v1/billing/webhook`, { method: 'POST', body: '{}' });
+    assert.equal(hook.status, 404);
+    const me = (await b.get('/v1/account')).body;
+    assert.equal(me.plan, 'free');
+    assert.equal(me.subscription, null);
   });
 });

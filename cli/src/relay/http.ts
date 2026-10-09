@@ -15,6 +15,8 @@ export const LIMITS = {
   loginEmailsPerAddress: 5,
   loginEmailsPerClient: 20,
   loginEmailsPerHour: 100,
+  /** Checkout, Manage billing: each one calls the payment provider. Per account, per 10 minutes. */
+  billingCallsPer10Minutes: 10,
 };
 
 export class HttpError extends Error {

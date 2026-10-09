@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { IncomingHttpHeaders } from 'node:http';
 import type { Accounts } from '../accounts.js';
 import type { Account, Store } from '../db.js';
-import { HttpError, body, json, send } from '../http.js';
+import { HttpError, LIMITS, body, json, send } from '../http.js';
 import { RANK, planNamed, type PlanName } from '../plans.js';
 import type { App } from '../server.js';
 
@@ -38,6 +38,16 @@ export interface BillingProvider {
   verify(raw: Buffer, headers: IncomingHttpHeaders): boolean;
   /** Our view of a webhook, or undefined for events we don't act on. */
   parse(raw: Buffer): BillingEvent | undefined;
+}
+
+/** A failed call to the provider. `detail` is the provider's own explanation, kept short for the log. */
+export class BillingError extends Error {
+  constructor(
+    message: string,
+    readonly detail?: string,
+  ) {
+    super(message);
+  }
 }
 
 export interface SubscriptionView {
@@ -106,11 +116,23 @@ export function billingRoutes(app: App, accounts: Accounts, provider: BillingPro
       `SELECT plan, status, renews_at, ends_at FROM subscriptions
         WHERE account_id = ? AND ${LIVE} ORDER BY updated DESC LIMIT 1`,
     ),
-    newest: store.prepare<{ provider_id: string }>(
-      'SELECT provider_id FROM subscriptions WHERE account_id = ? AND provider = ? ORDER BY updated DESC LIMIT 1',
+    // A live subscription first (it is the one the customer can still change), else the newest.
+    portal: store.prepare<{ provider_id: string }>(
+      `SELECT provider_id FROM subscriptions WHERE account_id = ? AND provider = ?
+        ORDER BY (${LIVE}) DESC, updated DESC LIMIT 1`,
     ),
-    seen: store.prepare('INSERT OR IGNORE INTO billing_events (id, received) VALUES (?, ?)'),
+    seen: store.prepare<{ id: string }>('SELECT id FROM billing_events WHERE id = ?'),
+    remember: store.prepare('INSERT OR IGNORE INTO billing_events (id, received) VALUES (?, ?)'),
     hasAccount: store.prepare<{ id: string }>('SELECT id FROM accounts WHERE id = ?'),
+    tracked: store.prepare<{ account_id: string }>(
+      'SELECT account_id FROM subscriptions WHERE provider = ? AND provider_id = ?',
+    ),
+    // Same ordering guard as the upsert: an event older than the stored row changes nothing.
+    // The plan column stays as it was; the row just stops counting as live.
+    retire: store.prepare(
+      `UPDATE subscriptions SET status = ?, active = 0, renews_at = ?, ends_at = ?, updated = ?
+        WHERE provider = ? AND provider_id = ? AND updated <= ?`,
+    ),
     // The WHERE makes an event older than the stored row a no-op (changes = 0).
     upsert: store.prepare(
       `INSERT INTO subscriptions (provider, provider_id, account_id, plan, status, active, renews_at, ends_at, updated)
@@ -124,6 +146,21 @@ export function billingRoutes(app: App, accounts: Accounts, provider: BillingPro
     dropEvents: store.prepare('DELETE FROM billing_events WHERE received < ?'),
   };
 
+  // Checkout and Manage billing each call the provider, so one budget covers all three routes.
+  // It is keyed by account (by device while a machine has no account) and checked after sign-in,
+  // so a caller who is not signed in cannot spend anyone's budget.
+  const limitCalls = app.counter(
+    10 * 60_000,
+    LIMITS.billingCallsPer10Minutes,
+    'Too many billing requests. Wait ten minutes and try again.',
+  );
+
+  /** An error for the log: its message, plus the provider's own explanation when it sent one. */
+  const describe = (error: unknown) => {
+    const { message, detail } = error as BillingError;
+    return detail ? `${message}: ${detail}` : message;
+  };
+
   async function checkout(account: Account, input: { plan?: unknown }) {
     const plan = planNamed(input.plan);
     if (plan !== 'plus' && plan !== 'pro') throw new HttpError(400, 'Pick a plan: plus or pro.');
@@ -135,7 +172,7 @@ export function billingRoutes(app: App, accounts: Accounts, provider: BillingPro
     try {
       url = await provider.checkoutUrl(account, plan);
     } catch (error) {
-      app.log(`Checkout failed: ${(error as Error).message}`);
+      app.log(`Checkout failed: ${describe(error)}`);
       throw new HttpError(502, "The payment page didn't load. Try again in a minute.");
     }
     app.stats.count('checkouts');
@@ -145,11 +182,13 @@ export function billingRoutes(app: App, accounts: Accounts, provider: BillingPro
   app.on('POST', '/v1/account/checkout', async (req, res) => {
     accounts.requireOrigin(req);
     const account = accounts.requireSession(req);
+    limitCalls(req, account.id);
     send(res, 200, await checkout(account, await json(req)));
   });
 
   app.on('POST', '/v1/devices/me/checkout', async (req, res) => {
     const device = app.device(req);
+    limitCalls(req, device.account_id ?? device.id);
     const input = await json<{ plan?: unknown }>(req);
     const account = device.account_id ? accounts.byId(device.account_id) : undefined;
     if (!account) throw new HttpError(409, "This machine isn't linked to an account. Run `tunnel login` first.");
@@ -158,17 +197,56 @@ export function billingRoutes(app: App, accounts: Accounts, provider: BillingPro
 
   app.on('GET', '/v1/account/portal', async (req, res) => {
     const account = accounts.requireSession(req);
-    const sub = s.newest.get(account.id, provider.name);
+    limitCalls(req, account.id);
+    const sub = s.portal.get(account.id, provider.name, Date.now());
     if (!sub) throw new HttpError(404, 'No subscription yet.');
     let url: string;
     try {
       url = await provider.portalUrl(sub.provider_id);
     } catch (error) {
-      app.log(`Billing portal failed: ${(error as Error).message}`);
+      app.log(`Billing portal failed: ${describe(error)}`);
       throw new HttpError(502, "The billing page didn't load. Try again in a minute.");
     }
     send(res, 200, { url });
   });
+
+  /** What an event does to the stored subscriptions and the account's plan. Runs inside apply's transaction. */
+  function place(event: BillingEvent): { outcome: string; changed: boolean } {
+    const skip = (outcome: string) => ({ outcome, changed: false });
+    if (!event.plan) {
+      // Not one of our plans. A subscription we already track that moved to such a product no longer
+      // gives a plan: end it, or a customer who switched to it and cancelled would keep their old plan.
+      const known = s.tracked.get(provider.name, event.subscriptionId);
+      if (!known) return skip('not a tunnel plan, skipped');
+      const changes = s.retire.run(
+        event.status,
+        event.renewsAt,
+        event.endsAt,
+        event.updatedAt,
+        provider.name,
+        event.subscriptionId,
+        event.updatedAt,
+      ).changes;
+      if (Number(changes) === 0) return skip('older than what we have, skipped');
+      recompute.account(known.account_id);
+      return { outcome: 'not a tunnel plan, subscription ended', changed: true };
+    }
+    if (!s.hasAccount.get(event.accountId)) return skip('unknown account, skipped');
+    const changes = s.upsert.run(
+      provider.name,
+      event.subscriptionId,
+      event.accountId,
+      event.plan,
+      event.status,
+      event.active ? 1 : 0,
+      event.renewsAt,
+      event.endsAt,
+      event.updatedAt,
+    ).changes;
+    if (Number(changes) === 0) return skip('older than what we have, skipped');
+    recompute.account(event.accountId);
+    return { outcome: 'applied', changed: true };
+  }
 
   /** Store the event and update the account. Returns what happened, for the log. */
   function apply(raw: Buffer, event: BillingEvent): string {
@@ -176,26 +254,13 @@ export function billingRoutes(app: App, accounts: Accounts, provider: BillingPro
     store.db.exec('BEGIN IMMEDIATE');
     try {
       let outcome: string;
-      if (Number(s.seen.run(id, Date.now()).changes) === 0) outcome = 'duplicate, skipped';
-      else if (!event.plan) outcome = 'not a tunnel plan, skipped';
-      else if (!s.hasAccount.get(event.accountId)) outcome = 'unknown account, skipped';
+      if (s.seen.get(id)) outcome = 'duplicate, skipped';
       else {
-        const changes = s.upsert.run(
-          provider.name,
-          event.subscriptionId,
-          event.accountId,
-          event.plan,
-          event.status,
-          event.active ? 1 : 0,
-          event.renewsAt,
-          event.endsAt,
-          event.updatedAt,
-        ).changes;
-        if (Number(changes) === 0) outcome = 'older than what we have, skipped';
-        else {
-          recompute.account(event.accountId);
-          outcome = 'applied';
-        }
+        const placed = place(event);
+        // Only an event that changed something is remembered. A skipped one may become valid once the
+        // owner fixes a mistake (a variant id, say), and the provider's resend must not read as a duplicate.
+        if (placed.changed) s.remember.run(id, Date.now());
+        outcome = placed.outcome;
       }
       store.db.exec('COMMIT');
       return outcome;
