@@ -224,10 +224,12 @@ export function billingRoutes(app: App, accounts: Accounts, provider: BillingPro
 
   /** What an event does to the stored subscriptions and the account's plan. Runs inside apply's transaction. */
   function place(event: BillingEvent): { outcome: string; remember: boolean } {
-    const done = (outcome: string, remember = false) => ({ outcome, remember });
     // A subscription belongs to the account it was first seen for. The account named in a later event is
     // ignored, so a (signed) event can't hand a subscription, or its plan, to someone else.
     const known = s.tracked.get(provider.name, event.subscriptionId);
+    // When the event names another account than the stored owner, the log says who really owns it (ids only).
+    const stored = known && known.account_id !== event.accountId ? ` (stored owner ${known.account_id})` : '';
+    const done = (outcome: string, remember = false) => ({ outcome: outcome + stored, remember });
     if (!event.plan) {
       // Not one of our plans. A subscription we already track that moved to such a product no longer
       // gives a plan: end it, or a customer who switched to it and cancelled would keep their old plan.

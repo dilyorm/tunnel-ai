@@ -105,6 +105,28 @@ describe('GitHub sign-in', () => {
     }
   });
 
+  test('the primary email is trimmed and checked like an address typed into the sign-in form', async () => {
+    const profile = out.table[USER];
+    const emails = out.table[EMAILS];
+    try {
+      out.table[USER] = () => Response.json({ id: 77, login: 'padded' });
+      out.table[EMAILS] = () => Response.json([{ email: '  Padded@Example.com ', primary: true, verified: true }]);
+      const b = browser(r);
+      assert.equal(await back(b, `code=abc&state=${await stateOf(b)}`), '/account');
+      assert.equal((await b.get('/v1/account')).body.email, 'padded@example.com');
+
+      out.table[USER] = () => Response.json({ id: 78, login: 'garbled' });
+      out.table[EMAILS] = () => Response.json([{ email: 'not an address', primary: true, verified: true }]);
+      const c = browser(r);
+      assert.equal(await back(c, `code=abc&state=${await stateOf(c)}`), '/account?error=github-email');
+      assert.equal(c.jar.has('tunnel_session'), false);
+      assert.deepEqual(await sql(r.dataDir, 'SELECT id FROM accounts WHERE github_id = 78'), []);
+    } finally {
+      out.table[USER] = profile;
+      out.table[EMAILS] = emails;
+    }
+  });
+
   test('a GitHub profile without an id or login is an outage, not a crash', async () => {
     const profile = out.table[USER];
     try {

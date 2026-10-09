@@ -1,8 +1,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, ftruncateSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { GB, MB } from '../src/relay/plans.js';
+import { GB, MB, PLANS } from '../src/relay/plans.js';
 import { DAY, FULL_ENV, agent, grant, relay, sleep, sql, type Agent, type TestRelay } from './helpers.js';
 
 function bigFile(dir: string, bytes: number) {
@@ -61,6 +61,21 @@ describe('tunnel caps', () => {
       await r.close();
     }
   });
+
+  test('a relay with unlimited Free tunnels does not cap a paid plan below Free', async () => {
+    const r = await relay({ maxTunnelsPerDevice: 0 });
+    try {
+      const a = agent(() => r, 'cap-unlimited');
+      assert.equal((await a.run('open', 't0')).code, 0);
+      await grant(r.dataDir, 'plus', a.deviceId());
+      for (let i = 1; i <= 11; i++) {
+        const opened = await a.run('open', `t${i}`);
+        assert.equal(opened.code, 0, `tunnel ${i + 1}: ${opened.err}`);
+      }
+    } finally {
+      await r.close();
+    }
+  });
 });
 
 describe('file limits', () => {
@@ -73,6 +88,35 @@ describe('file limits', () => {
       assert.equal(sent.code, 1);
       assert.match(sent.err, /This file is 11 MB\. Tunnels on the Free plan take files up to 10 MB\./);
       assert.deepEqual(readdirSync(join(r.dataDir, 'files')), []);
+    } finally {
+      await r.close();
+    }
+  });
+
+  test('send refuses a file over 100 MB before reading it, with the limit of every plan', async () => {
+    const r = await relay();
+    try {
+      const a = agent(() => r, 'file-huge');
+      assert.equal((await a.run('open', 'f')).code, 0);
+      // Sparse: the file claims one byte over what any plan takes, but no data is behind it.
+      const path = join(a.cwd, 'huge.bin');
+      const fd = openSync(path, 'w');
+      try {
+        ftruncateSync(fd, PLANS.pro.fileBytes + 1);
+      } finally {
+        closeSync(fd);
+      }
+      try {
+        const sent = await a.run('send', 'too much', '--file', path);
+        assert.equal(sent.code, 2);
+        assert.equal(sent.out, '');
+        assert.equal(sent.err, `${path} is 100.0 MB. Files can be up to 100 MB on Pro, 50 MB on Plus, 10 MB on Free.\n`);
+        assert.deepEqual(readdirSync(join(r.dataDir, 'files')), []);
+        assert.equal(await count(r, 'files'), 0);
+        assert.equal(await count(r, 'messages'), 0);
+      } finally {
+        rmSync(path, { force: true });
+      }
     } finally {
       await r.close();
     }
@@ -260,6 +304,30 @@ describe('streamed uploads', () => {
       assert.match(error, /This file is over 10 MB\. Tunnels on the Free plan take files up to 10 MB\./);
       assert.deepEqual(readdirSync(join(r.dataDir, 'files')), []);
       assert.equal(await count(r, 'files'), 0);
+    } finally {
+      await r.close();
+    }
+  });
+});
+
+describe('storage queries', () => {
+  test("an account's stored bytes are found through an index on files(tunnel_id), not a scan of every file", async () => {
+    const r = await relay();
+    try {
+      const plan = await sql(
+        r.dataDir,
+        `EXPLAIN QUERY PLAN SELECT SUM(f.size) FROM files f
+           JOIN tunnels t ON t.id = f.tunnel_id
+           JOIN devices d ON d.id = t.owner_device
+          WHERE d.account_id = ?`,
+        'a_any',
+      );
+      const steps = plan.map((row) => String(row.detail));
+      assert.ok(
+        steps.some((step) => /files_tunnel/.test(step)),
+        steps.join('\n'),
+      );
+      assert.ok(!steps.some((step) => /^SCAN (f|files)\b/.test(step)), steps.join('\n'));
     } finally {
       await r.close();
     }

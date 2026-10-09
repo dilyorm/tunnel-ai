@@ -1,6 +1,7 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
+import { lemonSqueezy } from '../src/relay/billing/lemonsqueezy.js';
 import {
   DAY,
   FULL_ENV,
@@ -491,12 +492,18 @@ describe('billing safeguards', () => {
       (await sql(r.dataDir, "SELECT account_id FROM subscriptions WHERE provider_id = 'sub_bound'"))[0].account_id;
     assert.equal((await deliver(lemon('subscription_created', aid, {}, 'sub_bound'))).status, 200);
     assert.equal(await planOf(a), 'pro');
+    logged(`Billing subscription_created (active) for ${aid}: applied.`);
 
     // A later event for the same subscription that names another account does not move it.
+    const stale = lemon('subscription_updated', bid, {}, 'sub_bound'); // built first, so the older of the two
     assert.equal((await deliver(lemon('subscription_updated', bid, {}, 'sub_bound'))).status, 200);
     assert.equal(await owner(), aid);
     assert.equal(await planOf(a), 'pro');
     assert.equal(await planOf(b), 'free');
+    // The log says who really owns it, by id.
+    logged(`Billing subscription_updated (active) for ${bid}: applied (stored owner ${aid}).`);
+    assert.equal((await deliver(stale)).status, 200);
+    logged(`Billing subscription_updated (active) for ${bid}: older than what we have, skipped (stored owner ${aid}).`);
 
     // It still updates the subscription, and it is the owner's plan that follows.
     const over = lemon('subscription_expired', bid, { status: 'expired', ends_at: '2026-10-01T00:00:00.000000Z' }, 'sub_bound');
@@ -504,6 +511,20 @@ describe('billing safeguards', () => {
     assert.equal(await owner(), aid);
     assert.equal(await planOf(a), 'free');
     assert.equal(await planOf(b), 'free');
+    logged(`Billing subscription_expired (expired) for ${bid}: applied (stored owner ${aid}).`);
+    for (const line of lines.filter((l) => l.startsWith('Billing '))) assert.ok(!line.includes('@'), line);
+  });
+
+  test('an event for a tracked subscription that is not one of our plans names its stored owner too', async () => {
+    const [a, aid] = await customer('keeper@example.com');
+    const [, bid] = await customer('stranger@example.com');
+    assert.equal((await deliver(lemon('subscription_created', aid, {}, 'sub_kept'))).status, 200);
+    assert.equal((await deliver(lemon('subscription_updated', bid, { variant_id: 999 }, 'sub_kept'))).status, 200);
+    logged(`Billing subscription_updated (active) for ${bid}: not a tunnel plan, subscription ended (stored owner ${aid}).`);
+    assert.equal(await planOf(a), 'free');
+    // Not tracked: there is no stored owner to name.
+    assert.equal((await deliver(lemon('subscription_created', bid, { variant_id: 999 }, 'sub_unknown'))).status, 200);
+    logged(`Billing subscription_created (active) for ${bid}: not a tunnel plan, skipped.`);
   });
 
   test('Manage billing refuses a request that did not come from our own pages', async () => {
@@ -535,19 +556,60 @@ describe('billing safeguards', () => {
     assert.equal((await portal(b)).status, 429);
   });
 
+  /** A checkout that Lemon Squeezy refuses with this explanation. */
+  const refusedWith = (b: Browser, detail: string) =>
+    answering(CHECKOUTS, () => Response.json({ errors: [{ detail }] }, { status: 422 }), () =>
+      b.post('/v1/account/checkout', { plan: 'plus' }),
+    );
+  async function answering<T>(url: string, route: Route, fn: () => Promise<T>): Promise<T> {
+    const saved = out.table[url];
+    out.table[url] = route;
+    try {
+      return await fn();
+    } finally {
+      out.table[url] = saved;
+    }
+  }
+  const PREFIX = 'Checkout failed: Lemon Squeezy answered 422 to POST checkouts: ';
+
   test('a Lemon Squeezy error is redacted before it is logged', async () => {
     const [b] = await customer('redact@example.com');
-    const fail = (detail: string) => {
-      const saved = out.table[CHECKOUTS];
-      out.table[CHECKOUTS] = () => Response.json({ errors: [{ detail }] }, { status: 422 });
-      return b.post('/v1/account/checkout', { plan: 'plus' }).finally(() => void (out.table[CHECKOUTS] = saved));
-    };
-    assert.equal((await fail('Customer ada@example.com was rejected for key ls_test.')).status, 502);
-    logged('Checkout failed: Lemon Squeezy answered 422 to POST checkouts: Customer [email] was rejected for key [key].');
-    assert.equal((await fail('x'.repeat(300))).status, 502);
-    logged(`Checkout failed: Lemon Squeezy answered 422 to POST checkouts: ${'x'.repeat(200)}`);
+    assert.equal((await refusedWith(b, 'Customer ada@example.com was rejected for key ls_test.')).status, 502);
+    logged(`${PREFIX}Customer [email] was rejected for key [key].`);
+    assert.equal((await refusedWith(b, 'x'.repeat(300))).status, 502);
+    logged(`${PREFIX}${'x'.repeat(200)}`);
+    // The email sits across the 200-character cut. Cutting first would leave "ada@" in the log.
+    assert.equal((await refusedWith(b, `${'z'.repeat(195)} ada@example.com`)).status, 502);
+    logged(`${PREFIX}${'z'.repeat(195)} [ema`);
     for (const line of lines.filter((l) => l.startsWith('Checkout failed'))) {
-      assert.ok(!/ada@example\.com|ls_test/.test(line), line);
+      assert.ok(!/ada@|ls_test/.test(line), line);
+    }
+  });
+
+  test('a long reply with no spaces is redacted at once, not after a second of CPU', async () => {
+    const [b] = await customer('long@example.com');
+    assert.equal((await refusedWith(b, 'warm up')).status, 502);
+    const timed = async (detail: string) => {
+      const started = performance.now();
+      const res = await refusedWith(b, detail);
+      assert.equal(res.status, 502);
+      return performance.now() - started;
+    };
+
+    const plain = await timed('x'.repeat(40_000));
+    logged(`${PREFIX}${'x'.repeat(200)}`);
+    assert.ok(plain < 100, `40,000 characters took ${Math.round(plain)} ms`);
+
+    // An address in front of the same wall of text is still found, and the wall is cut after that.
+    const mixed = await timed(`ada@example.com ${'x'.repeat(40_000)}`);
+    logged(`${PREFIX}[email] ${'x'.repeat(192)}`);
+    assert.ok(mixed < 100, `an address plus 40,000 characters took ${Math.round(mixed)} ms`);
+
+    // Nothing but at-signs and letters, the worst case for a pattern that backtracks.
+    const dense = await timed('a@b@c@d@'.repeat(5000));
+    assert.ok(dense < 100, `40,000 characters of addresses took ${Math.round(dense)} ms`);
+    for (const line of lines.filter((l) => l.startsWith('Checkout failed'))) {
+      assert.ok(!/ada@/.test(line), line);
     }
   });
 });
@@ -587,5 +649,58 @@ describe('billing switched off', () => {
     const me = (await b.get('/v1/account')).body;
     assert.equal(me.plan, 'free');
     assert.equal(me.subscription, null);
+  });
+});
+
+// What each Lemon Squeezy status means for the customer's plan. The `active` flag decides who gets
+// a paid plan, so the whole mapping is pinned here, status by status.
+describe('Lemon Squeezy status mapping', () => {
+  const provider = lemonSqueezy(
+    { apiKey: 'ls_test', storeId: '11', webhookSecret: 'whsec', variants: { plus: '101', pro: '102' } },
+    PUBLIC_URL,
+    fetch,
+  );
+  // parse never reads the clock: "past" and "future" only name the two dates, to show that ends_at alone
+  // does not decide the flag (the sweep and the live filter stop a plan at its end date).
+  const ENDS = { none: null, past: '2026-09-01T00:00:00.000000Z', future: '2026-12-01T00:00:00.000000Z' } as const;
+
+  // [status, ends_at, whether the customer has the plan]
+  const table: [string, keyof typeof ENDS, boolean][] = [
+    ['active', 'none', true],
+    ['on_trial', 'none', true],
+    ['past_due', 'none', true],
+    ['paused', 'none', false],
+    ['paused', 'future', false],
+    ['unpaid', 'none', false],
+    ['expired', 'none', false],
+    ['expired', 'past', false],
+    ['cancelled', 'future', true], // runs until the end date
+    ['cancelled', 'past', true],
+    ['cancelled', 'none', false],
+    ['something_new', 'none', false], // an unknown status fails closed
+  ];
+
+  for (const [status, when, active] of table) {
+    test(`${status}, end date ${when}: ${active ? 'the customer has the plan' : 'no plan'}`, () => {
+      const endsAt = ENDS[when];
+      const event = provider.parse(Buffer.from(lemon('subscription_updated', 'a_1', { status, ends_at: endsAt }, 'sub_map')));
+      assert.ok(event);
+      assert.equal(event.status, status);
+      assert.equal(event.active, active);
+      assert.equal(event.endsAt, endsAt ? Date.parse(endsAt) : null);
+      assert.equal(event.plan, 'pro');
+      assert.equal(event.subscriptionId, 'sub_map');
+      assert.equal(event.accountId, 'a_1');
+    });
+  }
+
+  test('the product decides the plan: 101 is Plus, 102 is Pro, anything else is none', () => {
+    const planOf = (variant: unknown) =>
+      provider.parse(Buffer.from(lemon('subscription_created', 'a_1', { variant_id: variant })))?.plan;
+    assert.equal(planOf(101), 'plus');
+    assert.equal(planOf('101'), 'plus');
+    assert.equal(planOf(102), 'pro');
+    assert.equal(planOf(999), null);
+    assert.equal(planOf(undefined), null);
   });
 });

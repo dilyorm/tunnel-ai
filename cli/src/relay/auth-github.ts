@@ -1,5 +1,6 @@
 import { secretToken, sha256 } from '../crypto.js';
 import type { Accounts } from './accounts.js';
+import { normalizeEmail } from './auth-email.js';
 import type { Features } from './config.js';
 import { cookies, redirect, safeReturn, setCookie } from './http.js';
 import type { App } from './server.js';
@@ -56,7 +57,7 @@ export function githubRoutes(app: App, accounts: Accounts, config: NonNullable<F
     redirect(res, safeReturn(pending.return_to), [clearState, ...accounts.startSession(account.id)]);
   });
 
-  /** The GitHub user behind this code, or undefined when they have no verified primary email. */
+  /** The GitHub user behind this code, or undefined when they have no verified primary email we can use. */
   async function fetchUser(code: string) {
     const token = await call<{ access_token?: string; error?: string }>('https://github.com/login/oauth/access_token', {
       method: 'POST',
@@ -84,7 +85,15 @@ export function githubRoutes(app: App, accounts: Accounts, config: NonNullable<F
     );
     const primary = emails.find((e) => e.primary && e.verified);
     if (!primary) return undefined;
-    return { id: profile.id, login: profile.login, email: primary.email.toLowerCase() };
+    // The same trim and shape check as an address typed into the email form, so one person is one account.
+    // An address that fails it is as good as none.
+    let email: string;
+    try {
+      email = normalizeEmail(primary.email);
+    } catch {
+      return undefined;
+    }
+    return { id: profile.id, login: profile.login, email };
   }
 
   async function call<T>(url: string, init: RequestInit): Promise<T> {

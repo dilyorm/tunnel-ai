@@ -21,6 +21,7 @@ import {
   type Received,
 } from './messages.js';
 import { RelayClient } from './relay-client.js';
+import { formatBytes, PLANS } from './relay/plans.js';
 import { Store, type TunnelRecord } from './store.js';
 
 export const DEFAULT_RELAY = 'https://tunnel.dilyor.dev';
@@ -324,10 +325,19 @@ export async function sendCmd(ctx: Ctx, args: string[]) {
   const files: FileRef[] = [];
   for (const p of paths) {
     const path = resolve(ctx.cwd, p);
+    let size: number;
     try {
-      statSync(path);
+      size = statSync(path).size;
     } catch {
       throw new UsageError(`Can't read ${p}.`);
+    }
+    // No plan takes more than Pro's limit, so refuse here instead of reading and sealing a huge file.
+    // Below it the relay decides, by the plan of whoever opened the tunnel.
+    if (size > PLANS.pro.fileBytes) {
+      throw new UsageError(
+        `${p} is ${formatSize(size)}. Files can be up to ${formatBytes(PLANS.pro.fileBytes)} on Pro, ` +
+          `${formatBytes(PLANS.plus.fileBytes)} on Plus, ${formatBytes(PLANS.free.fileBytes)} on Free.`,
+      );
     }
     const data = await readFile(path);
     const up = await api(rec).upload<{ fileId: string }>(tunnelPath(rec, '/files'), seal(key, data));

@@ -26,6 +26,10 @@ function pageLink(value: unknown, what: string): string {
   return value;
 }
 
+// A word that holds an at-sign. It may only start where a word starts (after a space, an at-sign or the
+// start), so on a long text with no spaces the scan stays linear instead of retrying from every letter.
+const EMAIL = /(?<![^\s@])[^\s@]+@[^\s@]+/g;
+
 /**
  * The first error's explanation from a JSON:API error reply, on one short line, for the log. It is the
  * provider's free text and can quote the customer's email, so emails (and our API key, should it ever
@@ -36,7 +40,7 @@ async function detailOf(res: Response, apiKey: string): Promise<string | undefin
     const detail = ((await res.json()) as { errors?: { detail?: unknown }[] }).errors?.[0]?.detail;
     if (typeof detail !== 'string') return undefined;
     const text = detail.replace(/\s+/g, ' ').trim();
-    const line = (apiKey ? text.split(apiKey).join('[key]') : text).replace(/[^\s@]+@[^\s@]+/g, '[email]');
+    const line = (apiKey ? text.split(apiKey).join('[key]') : text).replace(EMAIL, '[email]');
     return line ? line.slice(0, 200) : undefined;
   } catch {
     return undefined;

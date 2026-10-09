@@ -158,6 +158,7 @@ UPDATE messages SET expires = created + ${7 * DAY} WHERE expires IS NULL;
 UPDATE files SET expires = created + ${7 * DAY} WHERE expires IS NULL;
 CREATE INDEX IF NOT EXISTS messages_expires ON messages(expires);
 CREATE INDEX IF NOT EXISTS files_expires ON files(expires);
+CREATE INDEX IF NOT EXISTS files_tunnel ON files(tunnel_id);
 CREATE INDEX IF NOT EXISTS devices_account ON devices(account_id);
 `;
 

@@ -242,6 +242,40 @@ describe('email sign-in', () => {
   });
 });
 
+describe('cookies under an https public URL', () => {
+  const HTTPS = 'https://tunnel.test';
+  const out = outbound();
+  let r: TestRelay;
+  before(async () => {
+    r = await relay({ env: { ...FULL_ENV, TUNNEL_PUBLIC_URL: HTTPS }, fetch: out.fetch });
+  });
+  after(() => r.close());
+
+  test('the sign-in, session, hint and OAuth cookies are all Secure, and signing out keeps the flag', async () => {
+    const b = browser(r, HTTPS);
+    const ask = await b.post('/v1/auth/email', { email: 'secure@example.com' });
+    assert.equal(ask.status, 202);
+    const [binding] = ask.headers.getSetCookie();
+    assert.match(binding, /^tunnel_login=[\da-f]{64}; Path=\/; Max-Age=900; SameSite=Lax; HttpOnly; Secure$/);
+
+    const done = await follow(b, out.lastLink());
+    assert.equal(done.status, 200);
+    const [session, hint, cleared] = done.headers.getSetCookie();
+    assert.match(session, /^tunnel_session=[\w-]{43}; Path=\/; Max-Age=2592000; SameSite=Lax; HttpOnly; Secure$/);
+    assert.equal(hint, 'tunnel_signed_in=1; Path=/; Max-Age=2592000; SameSite=Lax; Secure');
+    assert.equal(cleared, 'tunnel_login=; Path=/; Max-Age=0; SameSite=Lax; HttpOnly; Secure');
+
+    const github = await b.get('/v1/auth/github/start');
+    assert.match(github.headers.getSetCookie()[0], /^tunnel_oauth=[\w-]+; Path=\/; Max-Age=600; SameSite=Lax; HttpOnly; Secure$/);
+
+    const bye = await b.post('/v1/auth/logout');
+    assert.deepEqual(bye.headers.getSetCookie(), [
+      'tunnel_session=; Path=/; Max-Age=0; SameSite=Lax; HttpOnly; Secure',
+      'tunnel_signed_in=; Path=/; Max-Age=0; SameSite=Lax; Secure',
+    ]);
+  });
+});
+
 describe('sign-in email limits', () => {
   test('one address gets at most 5 links an hour', async () => {
     const out = outbound();

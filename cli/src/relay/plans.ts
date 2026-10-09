@@ -97,8 +97,11 @@ export function createPlans(store: Store, options: { freeCap: number; upgradeHin
     return { accountId: row?.account_id ?? null, plan: row?.plan ?? 'free' };
   };
 
-  const limitsOf = (plan: PlanName): Limits =>
-    plan === 'free' ? { ...PLANS.free, tunnels: options.freeCap } : PLANS[plan];
+  const limitsOf = (plan: PlanName): Limits => {
+    if (plan === 'free') return { ...PLANS.free, tunnels: options.freeCap };
+    // Free without a cap (a self-hosted relay) must not make a paid or granted plan the tighter one.
+    return options.freeCap === 0 ? { ...PLANS[plan], tunnels: 0 } : PLANS[plan];
+  };
 
   const accountTunnels = (accountId: string) => s.accountTunnels.get(accountId)?.n ?? 0;
   const storedBytes = (accountId: string) => s.storedBytes.get(accountId)?.n ?? 0;
