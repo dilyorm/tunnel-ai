@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin | tunnel</title>
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <header class="nav wrap">
+      <a class="brand" href="/" aria-label="tunnel home">
+        <svg class="brand-mark" viewBox="0 0 9 9" aria-hidden="true">
+          <path d="M0 0h9v1H0zM0 8h9v1H0zM0 1h1v7H0zM8 1h1v7H8z" />
+          <path d="M2 2h5v1H2zM2 6h5v1H2zM2 3h1v3H2zM6 3h1v3H6z" />
+          <path d="M4 4h1v1H4z" />
+        </svg>
+        tunnel
+      </a>
+      <nav class="nav-links" aria-label="Main">
+        <a href="/#pricing">Pricing</a>
+        <a href="/account" data-account-link>Sign in</a>
+      </nav>
+    </header>
+
+    <main class="page wrap">
+      <h1 class="page-title">Admin</h1>
+      <p class="status" id="status" role="status" hidden></p>
+
+      <p class="page-lede" id="denied" hidden>
+        This page is for the relay's admins. <a href="/account">Go to your account</a>.
+      </p>
+
+      <div id="admin" hidden>
+        <section aria-labelledby="today-title">
+          <h2 class="page-subtitle" id="today-title">Today</h2>
+          <dl class="numbers" id="today"></dl>
+        </section>
+
+        <section aria-labelledby="active-title">
+          <h2 class="page-subtitle" id="active-title">Active</h2>
+          <div class="table-wrap">
+            <table class="table" id="active">
+              <thead>
+                <tr>
+                  <th scope="col"><span class="sr-only">Who</span></th>
+                  <th scope="col">Today</th>
+                  <th scope="col">7 days</th>
+                  <th scope="col">30 days</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section aria-labelledby="plans-title">
+          <h2 class="page-subtitle" id="plans-title">Plans</h2>
+          <dl class="numbers" id="plans"></dl>
+        </section>
+
+        <section aria-labelledby="charts-title">
+          <h2 class="page-subtitle" id="charts-title">Last 30 days</h2>
+          <div class="charts" id="charts"></div>
+        </section>
+
+        <section aria-labelledby="referrers-title">
+          <h2 class="page-subtitle" id="referrers-title">Top referrers</h2>
+          <p class="page-lede" id="no-referrers" hidden>No other sites sent visitors in the last 30 days.</p>
+          <div class="table-wrap">
+            <table class="table" id="referrers">
+              <thead>
+                <tr><th scope="col">Site</th><th scope="col">Views</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section aria-labelledby="accounts-title">
+          <h2 class="page-subtitle" id="accounts-title">Accounts</h2>
+          <p class="page-lede">A grant overrides billing, including a paid plan, until you clear it.</p>
+          <form class="search" id="search" role="search">
+            <label class="sr-only" for="q">Search accounts</label>
+            <input id="q" type="search" placeholder="Email or GitHub login" />
+            <button class="btn" type="submit">Search</button>
+          </form>
+          <div class="table-wrap">
+            <table class="table" id="accounts">
+              <thead>
+                <tr>
+                  <th scope="col">Account</th>
+                  <th scope="col">Plan</th>
+                  <th scope="col">Machines</th>
+                  <th scope="col">Tunnels</th>
+                  <th scope="col">Joined</th>
+                  <th scope="col">Last seen</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <button class="btn btn-quiet" id="more" type="button" hidden>Load more</button>
+        </section>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap footer-row">
+        <nav class="footer-links" aria-label="Footer">
+          <a href="https://github.com/dilyorm/tunnel-ai">GitHub</a>
+          <a href="/terms">Terms</a>
+          <a href="/privacy">Privacy</a>
+          <a href="/refund">Refunds</a>
+          <a href="https://dilyor.dev">dilyor.dev</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/admin.ts"></script>
+  </body>
+</html>

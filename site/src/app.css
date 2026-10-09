@@ -220,3 +220,132 @@ button.btn:disabled {
 .table .btn {
   padding: 8px 14px;
 }
+
+/* ---------- admin ---------- */
+
+/* A row's label reads like its cells, not like a column heading. */
+.table tbody th {
+  padding: 10px 16px 10px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.numbers {
+  margin: 16px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 20px 24px;
+}
+
+/* A figure with words in it ("$45 a month") gets its own row instead of wrapping. */
+.numbers .wide {
+  grid-column: 1 / -1;
+}
+
+.numbers dt {
+  color: var(--stone);
+  font-size: 0.875rem;
+}
+
+.numbers dd {
+  margin: 4px 0 0;
+  font: 400 2rem/1.1 var(--pixel);
+}
+
+.charts {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 40px 48px;
+}
+
+.chart {
+  margin: 0;
+}
+
+.chart figcaption {
+  font-weight: 500;
+}
+
+.chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 8px;
+  overflow: visible;
+}
+
+.chart-grid {
+  stroke: var(--rule);
+}
+
+.chart-axis {
+  stroke: var(--ink);
+}
+
+.chart-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-label {
+  fill: var(--stone);
+  font: 400 11px var(--sans);
+}
+
+.chart-legend {
+  list-style: none;
+  margin-top: 8px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  font-size: 0.875rem;
+  color: var(--stone);
+}
+
+.chart-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+
+.search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  max-width: 32rem;
+}
+
+.search .btn {
+  margin-top: 0;
+}
+
+#more {
+  margin-top: 16px;
+}
+
+.grant {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.grant select,
+.grant input {
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 0.875rem var(--sans);
+}
+
+.muted {
+  color: var(--stone);
+  font-size: 0.875rem;
+}
