@@ -230,3 +230,9 @@ export async function linkMachine(a: Agent, b: Browser, ...flags: string[]) {
   assert.equal(res.status, 204, JSON.stringify(res.body));
   return login;
 }
+
+export async function accountIdOf(dataDir: string, email: string): Promise<string> {
+  const [row] = await sql(dataDir, 'SELECT id FROM accounts WHERE email = ?', email);
+  if (!row) throw new Error(`No account for ${email}.`);
+  return row.id;
+}

@@ -141,7 +141,7 @@ export function accountRoutes(app: App): Accounts {
       limits: app.plans.limitsOf(account.plan),
       usage: { tunnels: app.plans.accountTunnels(account.id), storageBytes: app.plans.storedBytes(account.id) },
       devices: s.devices.all(account.id),
-      subscription: null,
+      subscription: app.billing?.subscriptionOf(account.id) ?? null,
       admin: accounts.isAdmin(account),
     });
   });

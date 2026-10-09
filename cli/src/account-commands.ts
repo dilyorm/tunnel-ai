@@ -1,7 +1,7 @@
 import { relayFor, sleep, withDevice, type Ctx } from './commands.js';
-import { TunnelError } from './errors.js';
+import { TunnelError, UsageError } from './errors.js';
 import { RelayClient } from './relay-client.js';
-import { formatBytes, title, type Limits, type PlanName } from './relay/plans.js';
+import { formatBytes, PLANS, planNamed, PRICES, title, type Limits, type PlanName } from './relay/plans.js';
 
 // tunnel login, logout and account. Accounts are optional: a machine that never logs in is on the
 // Free plan. Each relay links separately; these commands act on the current one.
@@ -135,4 +135,36 @@ export async function accountCmd(ctx: Ctx) {
       (limits.storageBytes ? `, ${formatBytes(usage.storageBytes)} of ${formatBytes(limits.storageBytes)} stored` : ''),
   );
   ctx.out(`History  ${limits.historyDays} days`);
+}
+
+export async function upgradeCmd(ctx: Ctx, args: string[]) {
+  if (args.length === 0) {
+    const plans = (['plus', 'pro'] as const).map((plan) => ({ plan, price: PRICES[plan], ...PLANS[plan] }));
+    if (ctx.flags.json) return ctx.out(JSON.stringify({ plans }));
+    for (const p of plans) {
+      ctx.out(
+        `${title(p.plan).padEnd(5)} $${p.price}/month  ${p.tunnels} tunnels, files up to ${formatBytes(p.fileBytes)}, ` +
+          `${p.historyDays} days of history, ${formatBytes(p.storageBytes)} of storage`,
+      );
+    }
+    ctx.out('Run `tunnel upgrade plus` or `tunnel upgrade pro` to pay.');
+    return;
+  }
+  const plan = planNamed(args[0]);
+  if (args.length > 1 || (plan !== 'plus' && plan !== 'pro')) throw new UsageError('Usage: tunnel upgrade [plus|pro]');
+  const relay = relayFor(ctx);
+  const { url } = await asDevice<{ url: string }>(
+    ctx,
+    relay,
+    'POST',
+    '/v1/devices/me/checkout',
+    { plan },
+    `The relay at ${relay} doesn't sell plans.`,
+  );
+  if (ctx.flags.json) ctx.out(JSON.stringify({ plan, url }));
+  else {
+    ctx.out(`Open this page to pay for ${title(plan)}:`);
+    ctx.out(url);
+  }
+  ctx.openUrl?.(url);
 }

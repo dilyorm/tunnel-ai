@@ -33,6 +33,7 @@ Account
   tunnel login                        Link this machine to your account (opens a browser)
   tunnel logout                       Unlink this machine from its account
   tunnel account                      Show your plan, limits and usage
+  tunnel upgrade [plus|pro]           Pay for more tunnels, bigger files and longer history
 
 Setup
   tunnel skills install [--claude] [--codex]   Teach Claude Code and Codex to use tunnel
@@ -65,6 +66,7 @@ const COMMANDS: Record<string, (ctx: Ctx, args: string[]) => Promise<void>> = {
   login: accountCommands.loginCmd,
   logout: accountCommands.logoutCmd,
   account: accountCommands.accountCmd,
+  upgrade: accountCommands.upgradeCmd,
   skills: commands.skillsCmd,
   relay: commands.relayCmd,
 };

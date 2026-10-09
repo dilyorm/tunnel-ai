@@ -6,6 +6,8 @@ import { VERSION } from '../version.js';
 import { accountRoutes, linkRoutes } from './accounts.js';
 import { emailRoutes } from './auth-email.js';
 import { githubRoutes } from './auth-github.js';
+import { billingRoutes, createRecompute, type Billing } from './billing/index.js';
+import { lemonSqueezy } from './billing/lemonsqueezy.js';
 import { openStore, type Device, type Store } from './db.js';
 import { readFeatures, type Env, type Features } from './config.js';
 import { HttpError, LIMITS, bearer, clientKey, send, type Handler } from './http.js';
@@ -58,6 +60,8 @@ export interface App {
   linkPollSeconds: number;
   plans: Plans;
   stats: Stats;
+  /** Set when billing is configured. */
+  billing?: Billing;
   /** Work for the 10-minute sweep (expiry, cleanup). */
   sweeps: (() => void | Promise<void>)[];
 }
@@ -132,8 +136,15 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   if (features.publicUrl) {
     const accounts = accountRoutes(app);
     linkRoutes(app, accounts);
+    // Admin grants end even on a relay without billing, so the recompute sweep always runs.
+    const recompute = createRecompute(store);
+    app.sweeps.push(() => recompute.due());
     if (features.email) emailRoutes(app, accounts, features.email);
     if (features.github) githubRoutes(app, accounts, features.github);
+    if (features.billing) {
+      const provider = lemonSqueezy(features.billing, features.publicUrl, app.fetch);
+      app.billing = billingRoutes(app, accounts, provider, recompute);
+    }
   }
 
   const server = createServer(async (req, res) => {
