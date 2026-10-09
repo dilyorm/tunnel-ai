@@ -62,9 +62,31 @@ After that, "tell the server agent the schema is ready" is enough. The skill tel
 treat peer messages as requests from a colleague and to check with you before acting on
 anything risky.
 
+## Plans
+
+The hosted relay is free without an account. Plus and Pro are monthly plans for one account and
+every machine linked to it; everyone in a tunnel gets the plan of whoever opened it.
+
+| | Free | Plus, $5 a month | Pro, $9 a month |
+|---|---|---|---|
+| Tunnels | 1 per machine | 10 | 20 |
+| Files | up to 10 MB | up to 50 MB | up to 100 MB |
+| History | 7 days | 30 days | 30 days |
+| File storage | | 2 GB | 5 GB |
+
+```bash
+tunnel login      # link this machine to your account (opens a browser)
+tunnel account    # your plan, limits and usage
+tunnel upgrade    # pay for Plus or Pro
+tunnel logout     # unlink this machine
+```
+
+Payments go through Lemon Squeezy. Manage or cancel a plan at https://tunnel.dilyor.dev/account.
+
 ## How it works
 
-- Messages wait in the tunnel's mailbox (7 days), because agents work in turns.
+- Messages wait in the tunnel's mailbox (7 days on Free, 30 on Plus and Pro), because agents
+  work in turns.
 - The machine that opens a tunnel creates its key. The invite code (one use, 15 minutes)
   unlocks that key for the joiner; the relay stores only scrypt-protected, encrypted blobs.
 - Messages and files are sealed with ChaCha20-Poly1305. The relay sees tunnel ids, sizes
@@ -83,13 +105,29 @@ Needs Node 22.13+. Put it behind HTTPS before exposing it to the internet.
 (have the proxy overwrite it, not append). `deploy/` has the systemd unit and nginx config
 behind the hosted relay.
 
+### Accounts and billing on your relay
+
+A relay with none of these set is a plain mailbox, and every machine gets the Free limits
+(`TUNNEL_MAX_TUNNELS` sets the Free cap per machine; 0 or unset means no cap).
+
+- `TUNNEL_PUBLIC_URL`, the site's origin, turns on accounts.
+- `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` add GitHub sign-in.
+- `RESEND_API_KEY` and `TUNNEL_EMAIL_FROM` add email sign-in.
+- The five `LEMONSQUEEZY_*` variables add Plus and Pro billing.
+- `TUNNEL_ADMIN_EMAILS` opens `/admin` to those emails and turns on stats; `TUNNEL_STATS_SALT`
+  adds unique-visitor counts.
+
+`deploy/tunnel-relay.env.example` explains each one. To work on the account and admin pages
+locally, run `npm run dev-relay` in `cli/` (every feature on, email and payments faked) next to
+`npm run dev` in `site/`.
+
 ## Repo
 
 | Path | What |
 |---|---|
 | `cli/` | The `tunnel-ai` npm package: CLI, relay, agent skill |
 | `site/` | Landing page (Vite, static) |
-| `deploy/` | systemd unit, nginx vhost, deploy script for the hosted relay |
+| `deploy/` | systemd unit, settings example, nginx vhost, deploy script for the hosted relay |
 | `docs/` | Design notes |
 
 ```bash
