@@ -29,7 +29,7 @@ export function githubRoutes(app: App, accounts: Accounts, config: NonNullable<F
     authorize.search = new URLSearchParams({
       client_id: config.clientId,
       redirect_uri: callbackUrl,
-      scope: 'read:user user:email',
+      scope: 'user:email',
       state,
     }).toString();
     redirect(res, authorize.href, [setCookie(STATE_COOKIE, state, STATE_S, { secure, httpOnly: true })]);
@@ -52,6 +52,7 @@ export function githubRoutes(app: App, accounts: Accounts, config: NonNullable<F
     }
     if (!user) return fail('github-email');
     const account = accounts.upsertGithub(user);
+    if (!account) return fail('github-taken');
     redirect(res, safeReturn(pending.return_to), [clearState, ...accounts.startSession(account.id)]);
   });
 
@@ -74,6 +75,9 @@ export function githubRoutes(app: App, accounts: Accounts, config: NonNullable<F
       'user-agent': 'tunnel-relay',
     };
     const profile = await call<{ id: number; login: string }>('https://api.github.com/user', { headers });
+    if (typeof profile.id !== 'number' || typeof profile.login !== 'string') {
+      throw new Error('/user answered without an id and login');
+    }
     const emails = await call<{ email: string; primary: boolean; verified: boolean }[]>(
       'https://api.github.com/user/emails',
       { headers },

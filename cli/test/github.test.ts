@@ -38,7 +38,7 @@ describe('GitHub sign-in', () => {
     assert.equal(authorize.origin + authorize.pathname, 'https://github.com/login/oauth/authorize');
     assert.equal(authorize.searchParams.get('client_id'), 'gh-id');
     assert.equal(authorize.searchParams.get('redirect_uri'), `${PUBLIC_URL}/v1/auth/github/callback`);
-    assert.equal(authorize.searchParams.get('scope'), 'read:user user:email');
+    assert.equal(authorize.searchParams.get('scope'), 'user:email');
     const state = authorize.searchParams.get('state')!;
     assert.equal(b.jar.get('tunnel_oauth'), state);
 
@@ -55,10 +55,23 @@ describe('GitHub sign-in', () => {
   });
 
   test('a sign-in started in another browser is refused', async () => {
-    const state = await stateOf(browser(r));
+    const starter = browser(r);
+    const state = await stateOf(starter);
     const victim = browser(r);
     assert.equal(await back(victim, `code=abc&state=${state}`), '/account?error=github-state');
     assert.equal(victim.jar.has('tunnel_session'), false);
+    // The refused attempt did not spend the state: the browser that started it can still finish.
+    assert.equal(await back(starter, `code=abc&state=${state}`), '/account');
+    assert.equal(starter.jar.has('tunnel_session'), true);
+  });
+
+  test('a return path that leaves the site ends at /account', async () => {
+    for (const returnTo of ['//evil.com', '/\\evil.com']) {
+      const b = browser(r);
+      const state = (await start(b, returnTo)).searchParams.get('state')!;
+      assert.equal(await back(b, `code=abc&state=${state}`), '/account');
+      assert.equal(b.jar.has('tunnel_session'), true);
+    }
   });
 
   test('a state works once', async () => {
@@ -89,6 +102,20 @@ describe('GitHub sign-in', () => {
       assert.equal(await back(b, `code=abc&state=${await stateOf(b)}`), '/account?error=github');
     } finally {
       out.table[TOKEN] = token;
+    }
+  });
+
+  test('a GitHub profile without an id or login is an outage, not a crash', async () => {
+    const profile = out.table[USER];
+    try {
+      for (const answer of [{}, { id: '42', login: 'octocat' }, { id: 42 }]) {
+        out.table[USER] = () => Response.json(answer);
+        const b = browser(r);
+        assert.equal(await back(b, `code=abc&state=${await stateOf(b)}`), '/account?error=github');
+        assert.equal(b.jar.has('tunnel_session'), false);
+      }
+    } finally {
+      out.table[USER] = profile;
     }
   });
 });
@@ -122,5 +149,39 @@ describe('one person, one account', () => {
     assert.equal(await back(b, `code=abc&state=${await stateOf(b)}`), '/account');
     assert.equal((await b.get('/v1/account')).body.email, 'mona@example.com');
     assert.equal((await sql(r.dataDir, 'SELECT COUNT(*) AS n FROM accounts'))[0].n, 1);
+  });
+});
+
+describe('an address that belongs to another GitHub user', () => {
+  let user = { id: 1, login: 'first' };
+  const out = outbound({
+    [TOKEN]: () => Response.json({ access_token: 'gho_test' }),
+    [USER]: () => Response.json(user),
+    [EMAILS]: () => Response.json([{ email: 'shared@example.com', primary: true, verified: true }]),
+  });
+  let r: TestRelay;
+  before(async () => {
+    r = await relay({ env: FULL_ENV, fetch: out.fetch });
+  });
+  after(() => r.close());
+
+  test('never moves a GitHub-linked account to someone else', async () => {
+    const owner = browser(r);
+    assert.equal(await back(owner, `code=abc&state=${await stateOf(owner)}`), '/account');
+
+    // The mailbox now belongs to another GitHub user, who has it as primary and verified.
+    user = { id: 2, login: 'second' };
+    const other = browser(r);
+    assert.equal(await back(other, `code=abc&state=${await stateOf(other)}`), '/account?error=github-taken');
+    assert.equal(other.jar.has('tunnel_session'), false);
+    assert.deepEqual(await sql(r.dataDir, 'SELECT email, github_id, github_login FROM accounts'), [
+      { email: 'shared@example.com', github_id: 1, github_login: 'first' },
+    ]);
+
+    // The first user still signs in to their own account.
+    user = { id: 1, login: 'first' };
+    const again = browser(r);
+    assert.equal(await back(again, `code=abc&state=${await stateOf(again)}`), '/account');
+    assert.equal((await again.get('/v1/account')).body.githubLogin, 'first');
   });
 });

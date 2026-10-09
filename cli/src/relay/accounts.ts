@@ -24,8 +24,11 @@ export interface Accounts {
   /** A new session for this account, as Set-Cookie values. */
   startSession(accountId: string): string[];
   upsertByEmail(email: string): Account;
-  /** The account with this GitHub id, else the one with this email, else a new one. */
-  upsertGithub(user: { id: number; login: string; email: string }): Account;
+  /**
+   * The account with this GitHub id, else the one with this email, else a new one.
+   * undefined: the email belongs to an account already linked to another GitHub user.
+   */
+  upsertGithub(user: { id: number; login: string; email: string }): Account | undefined;
   isAdmin(account: Account): boolean;
 }
 
@@ -101,6 +104,9 @@ export function accountRoutes(app: App): Accounts {
     upsertByEmail: (email) => s.byEmail.get(email) ?? create(email),
     upsertGithub(user) {
       const account = s.byGithub.get(user.id) ?? s.byEmail.get(user.email) ?? create(user.email);
+      // An account linked to a different GitHub user is never handed to this one, even when the
+      // email now matches (a reassigned mailbox): its tunnels and plan would go with it.
+      if (account.github_id !== null && account.github_id !== user.id) return undefined;
       s.setGithub.run(user.id, user.login, account.id);
       return s.byId.get(account.id)!;
     },
