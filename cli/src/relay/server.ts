@@ -5,6 +5,7 @@ import { sha256 } from '../crypto.js';
 import { VERSION } from '../version.js';
 import { accountRoutes } from './accounts.js';
 import { emailRoutes } from './auth-email.js';
+import { githubRoutes } from './auth-github.js';
 import { openStore, type Device, type Store } from './db.js';
 import { readFeatures, type Env, type Features } from './config.js';
 import { HttpError, LIMITS, bearer, clientKey, send, type Handler } from './http.js';
@@ -131,6 +132,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   if (features.publicUrl) {
     const accounts = accountRoutes(app);
     if (features.email) emailRoutes(app, accounts, features.email);
+    if (features.github) githubRoutes(app, accounts, features.github);
   }
 
   const server = createServer(async (req, res) => {
