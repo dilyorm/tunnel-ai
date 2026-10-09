@@ -3,7 +3,8 @@ import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { sha256 } from '../crypto.js';
 import { VERSION } from '../version.js';
-import { openStore, type Store } from './db.js';
+import { openStore, type Device, type Store } from './db.js';
+import { readFeatures, type Env, type Features } from './config.js';
 import { HttpError, LIMITS, bearer, send, type Handler } from './http.js';
 import { tunnelRoutes } from './tunnels.js';
 
@@ -22,6 +23,13 @@ export interface RelayOptions {
   ttlMs?: number;
   /** Honour X-Forwarded-For when behind a reverse proxy. */
   trustProxy?: boolean;
+  /** Feature settings (TUNNEL_PUBLIC_URL, GITHUB_*, …). Nothing set means a plain relay. */
+  env?: Env;
+  /** Outbound HTTP to GitHub, Resend and Lemon Squeezy. Tests pass a stub. */
+  fetch?: typeof fetch;
+  log?: (line: string) => void;
+  /** How often `tunnel login` polls for approval, in seconds. */
+  linkPollSeconds?: number;
 }
 
 export interface Relay {
@@ -39,11 +47,16 @@ export interface App {
   /** A fixed-window limiter. It counts per client address unless the caller passes a key. */
   counter(windowMs: number, max: number, message: string): (req: IncomingMessage, key?: string) => void;
   /** The device behind the request's bearer token, or a 401. */
-  device(req: IncomingMessage): { id: string };
+  device(req: IncomingMessage): Device;
+  features: Features;
+  fetch: typeof fetch;
+  log(line: string): void;
+  linkPollSeconds: number;
   /** Work for the 10-minute sweep (expiry, cleanup). */
   sweeps: (() => void | Promise<void>)[];
 }
 
+const HOUR = 60 * 60 * 1000;
 const DAY = 24 * 60 * 60 * 1000;
 
 export async function startRelay(options: RelayOptions): Promise<Relay> {
@@ -71,6 +84,9 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
     };
   }
 
+  const log = options.log ?? ((line: string) => console.log(`[relay] ${line}`));
+  const features = readFeatures(options.env ?? {}, log);
+
   const app: App = {
     store,
     filesDir: join(options.dataDir, 'files'),
@@ -80,9 +96,15 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
     },
     clientOf,
     counter,
+    features,
+    fetch: options.fetch ?? globalThis.fetch.bind(globalThis),
+    log,
+    linkPollSeconds: options.linkPollSeconds ?? 3,
     device(req) {
       const row = store.deviceByToken.get(sha256(bearer(req)));
       if (!row) throw new HttpError(401, 'Unknown device.');
+      const now = Date.now();
+      if (row.seen === null || now - row.seen > HOUR) store.touchDevice.run(now, row.id);
       return row;
     },
     sweeps: [],

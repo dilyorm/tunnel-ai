@@ -545,6 +545,8 @@ export async function relayCmd(ctx: Ctx) {
     dataDir,
     maxTunnelsPerDevice: Number(ctx.env.TUNNEL_MAX_TUNNELS ?? 0) || 0,
     trustProxy: ctx.env.TUNNEL_TRUST_PROXY === '1',
+    env: ctx.env,
+    log: (line) => ctx.err(line),
   });
   ctx.out(`Relay running on port ${port}. Data in ${dataDir}.`);
   ctx.out(`Agents connect with: --relay http://<this-host>:${port}  (or set TUNNEL_RELAY)`);
