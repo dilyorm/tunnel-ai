@@ -1,3 +1,5 @@
+import { basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
 
 const SITE = 'https://tunnel.dilyor.dev/';
@@ -5,12 +7,24 @@ const DESCRIPTION =
   'Open-source CLI that gives AI coding agents like Claude Code and Codex an end-to-end encrypted ' +
   'tunnel to message each other and share files across machines.';
 
+/** Every HTML page in the build. */
+const PAGES = ['index', 'terms', 'privacy', 'refund'];
+/** Signed-in pages: noindex, and left out of the sitemap. */
+const PRIVATE = ['account', 'admin'];
+
+const OFFERS = [
+  { name: 'Free', price: '0', description: '1 tunnel per machine, files up to 10 MB, 7 days of history' },
+  { name: 'Plus', price: '5', description: '10 tunnels, files up to 50 MB, 30 days of history, 2 GB of storage' },
+  { name: 'Pro', price: '9', description: '20 tunnels, files up to 100 MB, 30 days of history, 5 GB of storage' },
+];
+
 // Structured data for search engines and AI answer engines. The FAQPage part is read from the
 // page's own <details> elements, so the visible FAQ and the JSON-LD cannot drift apart.
 function seo(): Plugin {
   return {
     name: 'tunnel-seo',
-    transformIndexHtml(html) {
+    transformIndexHtml(html, ctx) {
+      if (basename(ctx.filename) !== 'index.html') return html;
       const questions = [
         ...html.matchAll(/<details>\s*<summary>([\s\S]*?)<\/summary>\s*<p>([\s\S]*?)<\/p>\s*<\/details>/g),
       ].map(([, question, answer]) => ({
@@ -44,7 +58,21 @@ function seo(): Plugin {
             downloadUrl: `${SITE}tunnel-ai.tgz`,
             license: 'https://opensource.org/licenses/MIT',
             isAccessibleForFree: true,
-            offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+            offers: OFFERS.map((offer) => ({
+              '@type': 'Offer',
+              name: offer.name,
+              price: offer.price,
+              priceCurrency: 'USD',
+              description: offer.description,
+              ...(offer.price !== '0' && {
+                priceSpecification: {
+                  '@type': 'UnitPriceSpecification',
+                  price: offer.price,
+                  priceCurrency: 'USD',
+                  unitCode: 'MON',
+                },
+              }),
+            })),
             author: { '@type': 'Person', name: 'Dilyorbek', url: 'https://dilyor.dev' },
             sameAs: ['https://github.com/dilyorm/tunnel-ai'],
           },
@@ -72,7 +100,9 @@ function seo(): Plugin {
         source:
           '<?xml version="1.0" encoding="UTF-8"?>\n' +
           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' +
-          `  <url><loc>${SITE}</loc><lastmod>${today}</lastmod></url>\n` +
+          PAGES.filter((page) => !PRIVATE.includes(page))
+            .map((page) => `  <url><loc>${SITE}${page === 'index' ? '' : page}</loc><lastmod>${today}</lastmod></url>\n`)
+            .join('') +
           '</urlset>\n',
       });
     },
@@ -91,4 +121,13 @@ function plain(html: string): string {
     .trim();
 }
 
-export default defineConfig({ plugins: [seo()] });
+export default defineConfig({
+  plugins: [seo()],
+  build: {
+    rolldownOptions: {
+      input: Object.fromEntries(PAGES.map((page) => [page, fileURLToPath(new URL(`./${page}.html`, import.meta.url))])),
+    },
+  },
+  // `npm run dev-relay` in cli/ answers the API here while you work on the account and admin pages.
+  server: { proxy: { '/v1': 'http://127.0.0.1:8787' } },
+});

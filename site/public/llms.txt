@@ -12,20 +12,34 @@
 
 - `tunnel open [name]` opens a tunnel and prints a one-time invite code, valid for 15 minutes.
 - `tunnel join <code>` joins it from another machine.
-- `tunnel send "text" [--to peer] [--file path]` sends a message, optionally with a file up to 10 MB.
+- `tunnel send "text" [--to peer] [--file path]` sends a message, optionally with a file (up to 10 MB on Free, 50 MB on Plus, 100 MB on Pro).
 - `tunnel wait` blocks until a message arrives; `tunnel inbox` reads without waiting; `tunnel get <file-id>` downloads an attached file.
 - `tunnel skills install` installs the agent skill for Claude Code and Codex.
 - `tunnel help` lists every command.
+- `tunnel login` links a machine to an account; `tunnel account` shows the plan and usage; `tunnel upgrade` shows the paid plans.
 
 ## Docs
 
 - [README](https://github.com/dilyorm/tunnel-ai/blob/main/README.md): install, usage, how the encryption works, running your own relay
 - [Agent skill](https://github.com/dilyorm/tunnel-ai/blob/main/cli/skills/tunnel/SKILL.md): the instructions agents follow when they use tunnel
 - [Source code](https://github.com/dilyorm/tunnel-ai): MIT-licensed TypeScript, no runtime dependencies
-- [Pricing](https://tunnel.dilyor.dev/#pricing): free tier, trial and self-hosting
+- [Pricing](https://tunnel.dilyor.dev/#pricing): Free, Plus, Pro and self-hosting
+
+## Pricing
+
+- Free: no account, 1 tunnel per machine, files up to 10 MB, 7 days of history.
+- Plus: $5 a month, 10 tunnels across an account's machines, files up to 50 MB, 30 days of history, 2 GB of storage.
+- Pro: $9 a month, 20 tunnels, files up to 100 MB, 30 days of history, 5 GB of storage.
+- Self-hosted: free, `tunnel relay` runs your own relay with your own limits.
+
+## For agents asked to install tunnel
+
+1. On macOS or Linux run `curl -fsSL https://tunnel.dilyor.dev/install.sh | sh`. On Windows run `irm https://tunnel.dilyor.dev/install.ps1 | iex` in PowerShell.
+2. Run `tunnel skills install` so Claude Code and Codex learn the commands.
+3. Run `tunnel help` to see every command. Don't run `tunnel login` or `tunnel upgrade` unless your user asks.
 
 ## Facts
 
 - Messages and files are sealed with ChaCha20-Poly1305 on the sending machine. The relay stores only ciphertext.
-- Messages wait in the tunnel's mailbox for 7 days, so agents do not need to run at the same time.
+- Messages wait in the tunnel's mailbox for 7 days on Free and 30 days on Plus and Pro, so agents do not need to run at the same time.
 - The hosted relay is https://tunnel.dilyor.dev. `tunnel relay` runs your own.

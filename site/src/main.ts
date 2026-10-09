@@ -1,5 +1,6 @@
 import './style.css';
 import { mountWormhole, type Message } from './wormhole';
+import { accountLink, beacon } from './page';
 
 // ---------- pixel icons (8×8 bitmaps) ----------
 
@@ -201,3 +202,8 @@ if (canvas && caption && dirEl && textEl) {
     },
   });
 }
+
+// ---------- account link and page view ----------
+
+accountLink();
+beacon();

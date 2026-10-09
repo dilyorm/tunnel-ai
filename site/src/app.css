@@ -1,0 +1,76 @@
+/* The account, admin and legal pages. Loaded after style.css; reuses its tokens. */
+
+[hidden] {
+  display: none !important;
+}
+
+/* The footer's own top margin spaces the end of the page. */
+.page {
+  padding-top: clamp(32px, 6vw, 72px);
+}
+
+.page-title {
+  font: 400 clamp(2.25rem, 5vw, 3.5rem) / 1 var(--pixel);
+  letter-spacing: -0.01em;
+}
+
+.page-lede {
+  margin-top: 16px;
+  max-width: var(--measure);
+  color: var(--stone);
+}
+
+.page-lede code {
+  color: var(--ink);
+}
+
+.page-subtitle {
+  margin-top: 56px;
+  font: 600 1.25rem/1.2 var(--sans);
+  letter-spacing: -0.02em;
+}
+
+.status {
+  margin-top: 24px;
+  max-width: var(--measure);
+  padding: 12px 16px;
+  background: var(--haze);
+  border-left: 3px solid var(--signal);
+}
+
+.status[data-tone='error'] {
+  background: var(--paper);
+  border: 1px solid var(--signal);
+  border-left-width: 3px;
+}
+
+/* ---------- legal pages ---------- */
+
+.legal {
+  max-width: var(--measure);
+}
+
+.legal .updated {
+  margin-top: 12px;
+  color: var(--stone);
+  font-size: 0.9375rem;
+}
+
+.legal h2 {
+  margin-top: 40px;
+  font: 600 1.25rem/1.25 var(--sans);
+  letter-spacing: -0.02em;
+}
+
+.legal p,
+.legal ul {
+  margin-top: 12px;
+}
+
+.legal ul {
+  padding-left: 1.25em;
+}
+
+.legal li + li {
+  margin-top: 6px;
+}

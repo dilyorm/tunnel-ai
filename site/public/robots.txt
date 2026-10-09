@@ -1,6 +1,8 @@
-# Search engines and AI assistants are welcome; the relay API is not a page.
+# Search engines and AI assistants are welcome; the relay API and signed-in pages are not pages to index.
 User-agent: *
 Allow: /
 Disallow: /v1/
+Disallow: /account
+Disallow: /admin
 
 Sitemap: https://tunnel.dilyor.dev/sitemap.xml
