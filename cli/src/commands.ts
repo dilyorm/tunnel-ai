@@ -33,6 +33,8 @@ export interface IO {
   err(line: string): void;
   signal?: AbortSignal;
   stdin?: () => Promise<string>;
+  /** Open a link in the person's browser. bin.ts only does this on a terminal. */
+  openUrl?(url: string): void;
 }
 
 export interface Flags {
@@ -62,7 +64,7 @@ export interface Ctx extends IO {
 
 const trimSlash = (url: string) => url.replace(/\/+$/, '');
 
-function relayFor(ctx: Ctx): string {
+export function relayFor(ctx: Ctx): string {
   return trimSlash(ctx.flags.relay || ctx.env.TUNNEL_RELAY || ctx.store.config().relay || DEFAULT_RELAY);
 }
 
@@ -74,6 +76,22 @@ async function deviceToken(ctx: Ctx, relay: string): Promise<string> {
   config.devices[relay] = { id: created.deviceId, token: created.deviceToken };
   ctx.store.saveConfig(config);
   return created.deviceToken;
+}
+
+/**
+ * Call the relay as this machine's device, registering one first if needed. A relay that forgot
+ * the device (its data was reset) answers 401; then register again and retry, once.
+ */
+export async function withDevice<T>(ctx: Ctx, relay: string, fn: (client: RelayClient) => Promise<T>): Promise<T> {
+  try {
+    return await fn(new RelayClient(relay, await deviceToken(ctx, relay)));
+  } catch (error) {
+    if ((error as TunnelError & { status?: number }).status !== 401) throw error;
+    const config = ctx.store.config();
+    delete config.devices[relay];
+    ctx.store.saveConfig(config);
+    return fn(new RelayClient(relay, await deviceToken(ctx, relay)));
+  }
 }
 
 function agentKind(env: NodeJS.ProcessEnv): string {
@@ -197,7 +215,7 @@ function seconds(value: string | undefined, fallback: number): number {
   return n;
 }
 
-const sleep = (ms: number, signal?: AbortSignal) =>
+export const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve) => {
     const t = setTimeout(resolve, ms);
     signal?.addEventListener('abort', () => (clearTimeout(t), resolve()), { once: true });
@@ -210,23 +228,11 @@ export async function openCmd(ctx: Ctx, args: string[]) {
   const relay = relayFor(ctx);
   const me = memberName(ctx);
   const key = newKey();
-  const create = async () =>
-    new RelayClient(relay, await deviceToken(ctx, relay)).json<{ tunnelId: string; memberId: string; memberToken: string }>(
-      'POST',
-      '/v1/tunnels',
-      { profile: sealText(key, JSON.stringify({ name: me })) },
-    );
-  let res: Awaited<ReturnType<typeof create>>;
-  try {
-    res = await create();
-  } catch (error) {
-    // The relay forgot this device (e.g. its data was reset): register again, once.
-    if ((error as TunnelError & { status?: number }).status !== 401) throw error;
-    const config = ctx.store.config();
-    delete config.devices[relay];
-    ctx.store.saveConfig(config);
-    res = await create();
-  }
+  const res = await withDevice(ctx, relay, (client) =>
+    client.json<{ tunnelId: string; memberId: string; memberToken: string }>('POST', '/v1/tunnels', {
+      profile: sealText(key, JSON.stringify({ name: me })),
+    }),
+  );
   const rec: TunnelRecord = {
     name,
     id: res.tunnelId,

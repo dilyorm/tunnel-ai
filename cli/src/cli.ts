@@ -1,5 +1,6 @@
 import { parseArgs } from 'node:util';
 import * as commands from './commands.js';
+import * as accountCommands from './account-commands.js';
 import type { Ctx, Flags, IO } from './commands.js';
 import { TunnelError } from './errors.js';
 import { Store } from './store.js';
@@ -27,6 +28,11 @@ Manage
   tunnel leave                        Leave the current tunnel
   tunnel close                        Delete the tunnel for everyone (opener only)
   tunnel watch                        Follow the conversation as a human, read-only
+
+Account
+  tunnel login                        Link this machine to your account (opens a browser)
+  tunnel logout                       Unlink this machine from its account
+  tunnel account                      Show your plan, limits and usage
 
 Setup
   tunnel skills install [--claude] [--codex]   Teach Claude Code and Codex to use tunnel
@@ -56,6 +62,9 @@ const COMMANDS: Record<string, (ctx: Ctx, args: string[]) => Promise<void>> = {
   use: commands.useCmd,
   leave: commands.leaveCmd,
   close: commands.closeCmd,
+  login: accountCommands.loginCmd,
+  logout: accountCommands.logoutCmd,
+  account: accountCommands.accountCmd,
   skills: commands.skillsCmd,
   relay: commands.relayCmd,
 };

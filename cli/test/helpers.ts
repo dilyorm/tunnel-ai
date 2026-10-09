@@ -49,10 +49,13 @@ export type Agent = ReturnType<typeof agent>;
 export function agent(relayOf: () => { url: string }, label: string) {
   const home = tmp(label);
   const cwd = tmp(`${label}-cwd`);
+  const opened: string[] = [];
   const read = <T>(file: string) => JSON.parse(readFileSync(join(home, file), 'utf8')) as T;
   return {
     home,
     cwd,
+    /** Links the CLI asked to open in a browser, oldest first. */
+    opened,
     async run(...argv: string[]) {
       let out = '';
       let err = '';
@@ -61,6 +64,7 @@ export function agent(relayOf: () => { url: string }, label: string) {
         cwd,
         out: (s) => (out += s + '\n'),
         err: (s) => (err += s + '\n'),
+        openUrl: (url) => opened.push(url),
       });
       return { code, out, err };
     },
@@ -200,4 +204,29 @@ export async function signIn(b: Browser, out: Outbound, email: string, returnTo?
   const done = await follow(b, out.lastLink());
   assert.equal(done.status, 200, JSON.stringify(done.body));
   return done.body.returnTo;
+}
+
+/** Poll until `fn` returns something truthy. */
+export async function until<T>(fn: () => T | undefined, ms = 5000): Promise<T> {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const value = fn();
+    if (value) return value;
+    if (Date.now() > deadline) throw new Error(`Nothing after ${ms} ms.`);
+    await sleep(10);
+  }
+}
+
+/**
+ * Run `tunnel login` on `a` and confirm its code in browser `b`, as a person would.
+ * Use a relay started with a small `linkPollSeconds`. Returns the finished login run.
+ */
+export async function linkMachine(a: Agent, b: Browser, ...flags: string[]) {
+  const before = a.opened.length;
+  const login = a.run('login', ...flags);
+  const url = await until(() => a.opened[before]);
+  const userCode = new URL(url).searchParams.get('link');
+  const res = await b.post('/v1/account/devices/link', { userCode });
+  assert.equal(res.status, 204, JSON.stringify(res.body));
+  return login;
 }

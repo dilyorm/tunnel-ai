@@ -1,7 +1,8 @@
+import { randomInt } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import { secretToken, sha256, shortId } from '../crypto.js';
 import type { Account } from './db.js';
-import { HttpError, cookies, send, setCookie } from './http.js';
+import { HttpError, cookies, json, send, setCookie } from './http.js';
 import type { App } from './server.js';
 
 // Accounts are optional: a device works without one. An account holds the plan and the machines
@@ -160,4 +161,107 @@ export function accountRoutes(app: App): Accounts {
   });
 
   return accounts;
+}
+
+// ---------- linking machines (tunnel login) ----------
+
+/** No 0/O, 1/I/L or U, so a code read aloud or retyped comes out the same. */
+const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ';
+const LINK_S = 10 * 60;
+
+/** A code as stored: upper case, letters and digits only. */
+export const normalizeCode = (value: unknown) =>
+  typeof value === 'string' ? value.toUpperCase().replace(/[^0-9A-Z]/g, '') : '';
+
+/** A stored code as people see it: ABCD-EFGH. */
+export const formatCode = (code: string) => `${code.slice(0, 4)}-${code.slice(4)}`;
+
+const newUserCode = () =>
+  Array.from({ length: 8 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
+
+/**
+ * The device-code flow behind `tunnel login`. The CLI asks for a code, the person confirms it on
+ * the account page (which links the machine there and then), and the CLI's poll reports the result.
+ */
+export function linkRoutes(app: App, accounts: Accounts) {
+  const { store } = app;
+  const publicUrl = app.features.publicUrl!;
+  const s = {
+    insert: store.prepare('INSERT INTO device_links (user_code, poll_hash, device_id, expires) VALUES (?, ?, ?, ?)'),
+    poll: store.prepare<{ account_id: string | null }>(
+      'SELECT account_id FROM device_links WHERE poll_hash = ? AND expires > ?',
+    ),
+    drop: store.prepare('DELETE FROM device_links WHERE poll_hash = ?'),
+    approve: store.prepare<{ device_id: string }>(
+      `UPDATE device_links SET account_id = ?
+        WHERE user_code = ? AND expires > ? AND account_id IS NULL
+        RETURNING device_id`,
+    ),
+    link: store.prepare('UPDATE devices SET account_id = ? WHERE id = ?'),
+    unlink: store.prepare('UPDATE devices SET account_id = NULL WHERE id = ?'),
+  };
+  const limitStarts = app.counter(
+    10 * 60_000,
+    10,
+    'Too many login requests from this machine. Wait ten minutes and try again.',
+  );
+  // 30^8 codes live for 10 minutes; 20 tries per account per 10 minutes makes guessing hopeless.
+  const limitLinks = app.counter(10 * 60_000, 20, 'Too many link attempts. Wait ten minutes and try again.');
+
+  app.on('POST', '/v1/auth/device', async (req, res) => {
+    const device = app.device(req);
+    limitStarts(req, device.id);
+    const userCode = newUserCode();
+    const pollToken = secretToken();
+    s.insert.run(userCode, sha256(pollToken), device.id, Date.now() + LINK_S * 1000);
+    send(res, 201, {
+      userCode: formatCode(userCode),
+      verifyUrl: `${publicUrl}/account?link=${formatCode(userCode)}`,
+      pollToken,
+      expiresIn: LINK_S,
+      interval: app.linkPollSeconds,
+    });
+  });
+
+  app.on('POST', '/v1/auth/device/poll', async (req, res) => {
+    const input = await json<{ pollToken?: unknown }>(req);
+    const hash = sha256(typeof input.pollToken === 'string' ? input.pollToken : '');
+    const link = s.poll.get(hash, Date.now());
+    if (!link) throw new HttpError(410, 'This login request expired. Run `tunnel login` again.');
+    if (!link.account_id) return send(res, 202, { status: 'pending' });
+    s.drop.run(hash);
+    const account = accounts.byId(link.account_id);
+    send(res, 200, { email: account?.email ?? null, plan: account?.plan ?? 'free' });
+  });
+
+  app.on('POST', '/v1/account/devices/link', async (req, res) => {
+    accounts.requireOrigin(req);
+    const account = accounts.requireSession(req);
+    limitLinks(req, account.id);
+    const input = await json<{ userCode?: unknown }>(req);
+    const row = s.approve.get(account.id, normalizeCode(input.userCode), Date.now());
+    if (!row) throw new HttpError(404, 'That code is wrong or has expired. Run `tunnel login` again for a new one.');
+    s.link.run(account.id, row.device_id);
+    send(res, 204);
+  });
+
+  app.on('GET', '/v1/devices/me', async (req, res) => {
+    const device = app.device(req);
+    const account = device.account_id ? accounts.byId(device.account_id) : undefined;
+    const tunnels = app.plans.tunnelsOf(device);
+    send(res, 200, {
+      deviceId: device.id,
+      account: account ? { email: account.email } : null,
+      plan: tunnels.plan,
+      limits: app.plans.limitsOf(tunnels.plan),
+      usage: { tunnels: tunnels.used, storageBytes: account ? app.plans.storedBytes(account.id) : 0 },
+    });
+  });
+
+  app.on('POST', '/v1/devices/me/unlink', async (req, res) => {
+    const device = app.device(req);
+    const account = device.account_id ? accounts.byId(device.account_id) : undefined;
+    s.unlink.run(device.id);
+    send(res, 200, { email: account?.email ?? null });
+  });
 }
