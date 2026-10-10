@@ -74,7 +74,7 @@ function seo(): Plugin {
               }),
             })),
             author: { '@type': 'Person', name: 'Dilyorbek', url: 'https://dilyor.dev' },
-            sameAs: ['https://github.com/dilyorm/tunnel-ai'],
+            sameAs: ['https://github.com/dilyorm/tunnel-ai', 'https://www.npmjs.com/package/tunnel-ai'],
           },
           {
             '@type': 'SoftwareSourceCode',

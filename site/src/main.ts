@@ -124,8 +124,8 @@ const INSTALLS: Record<string, { prompt: string; parts: [string, string, string]
   },
   npm: {
     prompt: '$',
-    parts: ['npm i -g', 'https://tunnel.dilyor.dev/', 'tunnel-ai.tgz'],
-    note: 'Needs Node 22.13 or newer. Hosted here until the npm release.',
+    parts: ['npm i -g', 'tunnel-ai', ''],
+    note: 'Needs Node 22.13 or newer.',
   },
 };
 
