@@ -191,11 +191,15 @@ The installed file `dist/bin.js` resolves to one of three layouts.
   - On macOS and Linux: download `https://tunnel.dilyor.dev/install.sh` to a temp file and run `sh <file>`.
   - On Windows: download `install.ps1` and run `powershell -NoProfile -ExecutionPolicy Bypass -File <file>`.
   - Both run with `TUNNEL_INSTALL=<dir>` and `TUNNEL_NO_MODIFY_PATH=1`. The installer's output passes through.
-  - Then run `<dir>/bin/tunnel skills install --refresh` (the `.cmd` on Windows), so the new version's skill text is used.
+  - Then go on as in "After either install" below.
 - **npm global install:** the path contains `node_modules/tunnel-ai/`.
   - Run `npm i -g https://tunnel.dilyor.dev/tunnel-ai.tgz`, through a shell on Windows for `npm.cmd`.
-  - Then run `<node> <same dist/bin.js path> skills install --refresh`, with `<node>` being `process.execPath`. npm replaces the package in place, and this avoids picking up some other `tunnel` on `PATH`.
+  - Then go on as in "After either install" below.
 - **Anything else** (a git checkout run through tsx, or an unknown layout): print the three install commands from the README and exit 1. Nothing is changed.
+- **After either install:** both replace the files in place, so the same `dist/bin.js` now holds the new version.
+  - Run `<node> <dist/bin.js> --version`, with `<node>` being `process.execPath`. If it doesn't report a newer version, the update failed. This also catches `install.ps1`, which reports errors but always exits 0.
+  - Run `<node> <dist/bin.js> skills install --refresh`, so the new version's skill text is used. Running node directly avoids spawning a `.cmd` on Windows, and avoids picking up some other `tunnel` on `PATH`.
+- **Release base:** `TUNNEL_DOWNLOAD`, the variable the installers already read, overrides `https://tunnel.dilyor.dev` for the version check, the installer and npm downloads, and the daily hint. It is passed on to the installer. Tests and the manual check use it.
 
 ### Messages
 
@@ -205,16 +209,18 @@ The installed file `dist/bin.js` resolves to one of three layouts.
 | Updated | `Updated tunnel 0.2.0 → 0.3.0.` followed by the refresh output | 0 |
 | Health check fails | `Couldn't reach tunnel.dilyor.dev to check for updates.` plus the unreachable/Codex hint rules above | 1 |
 | Installer or npm fails | `The update failed (<command> exited with <code>). Your current tunnel 0.2.0 still works.` | 1 |
+| Installer exits 0 but the version didn't change | `The update failed (<command> finished, but tunnel still reports 0.2.0). Your current tunnel 0.2.0 still works.` | 1 |
+| Health answer has no x.y.z version | `<host> didn't say which version is latest. Try again later.` | 1 |
 
 The installers replace files in place.
 
-**Windows risk:** `cmd.exe` reads a running `.cmd` file as it goes, so rewriting `bin\tunnel.cmd` while it runs can make cmd execute garbage after node exits. The installer must leave `tunnel.cmd` byte-identical when nothing changed. The npm shim is regenerated identically. The plan includes a real Windows test of `tunnel update` from a script install.
+**Windows risk:** `cmd.exe` reads a running `.cmd` file as it goes, so rewriting `bin\tunnel.cmd` while it runs can make cmd execute garbage after node exits. The installer must leave `tunnel.cmd` byte-identical when nothing changed. The shim also starts its node line with `goto #_undefined_# 2>NUL ||`, the trick npm's cmd-shim uses: cmd stops reading the file once that line runs, so a rewrite can't be misread. The npm shim is regenerated identically. The plan includes a real Windows test of `tunnel update` from a script install.
 
 ### The daily hint
 
 The hint is printed after a command finishes, whether it succeeded or failed, when all of these hold:
 - `TUNNEL_NO_UPDATE_CHECK` is not `1`;
-- during this run, a response from the hosted relay (`https://tunnel.dilyor.dev`) carried `x-tunnel-version`;
+- during this run, a response from the hosted relay (`https://tunnel.dilyor.dev`, or `TUNNEL_DOWNLOAD`) carried `x-tunnel-version`;
 - that version is newer than `VERSION`;
 - `config.json`'s `updateHintAt` is missing or more than 24 hours old.
 
