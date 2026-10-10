@@ -22,6 +22,7 @@ import {
 import { RelayClient } from './relay-client.js';
 import { formatBytes, PLANS } from './relay/plans.js';
 import { Store, type TunnelRecord } from './store.js';
+import type { UpdateHooks } from './update.js';
 
 export const DEFAULT_RELAY = 'https://tunnel.dilyor.dev';
 const LONG_POLL_S = 50;
@@ -40,6 +41,8 @@ export interface IO {
   stdin?: () => Promise<string>;
   /** Open a link in the person's browser. bin.ts only does this on a terminal. */
   openUrl?(url: string): void;
+  /** Replaces parts of what `tunnel update` downloads and runs. Tests only. */
+  update?: Partial<UpdateHooks>;
 }
 
 export interface Flags {

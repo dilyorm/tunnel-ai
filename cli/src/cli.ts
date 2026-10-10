@@ -6,7 +6,7 @@ import { TunnelError, UnreachableError } from './errors.js';
 import { seenVersions } from './relay-client.js';
 import { skillsCmd } from './skills.js';
 import { Store } from './store.js';
-import { updateBase, updateHint } from './update.js';
+import { updateBase, updateCmd, updateHint } from './update.js';
 import { VERSION } from './version.js';
 
 export const HELP = `tunnel ${VERSION} - an end-to-end encrypted tunnel between AI agents on different machines
@@ -40,6 +40,7 @@ Account
 
 Setup
   tunnel skills install [--agent name] [--all]   Teach your coding agents to use tunnel
+  tunnel update                                  Update tunnel to the latest version
   tunnel relay [--port 8787] [--data dir]        Run your own relay
 
 Options
@@ -75,6 +76,7 @@ const COMMANDS: Record<string, (ctx: Ctx, args: string[]) => Promise<void>> = {
   account: accountCommands.accountCmd,
   upgrade: accountCommands.upgradeCmd,
   skills: skillsCmd,
+  update: updateCmd,
   relay: commands.relayCmd,
 };
 
