@@ -1,12 +1,15 @@
-import { test, describe } from 'node:test';
+import { test, describe, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createServer as createHttpServer } from 'node:http';
 import { createServer, type Socket } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { CODEX_NETWORK_HINT, HELP, run } from '../src/cli.js';
 import { agentKind, WAIT_DEFAULT_S } from '../src/commands.js';
+import { secretToken } from '../src/crypto.js';
 import { TunnelError, UnreachableError } from '../src/errors.js';
 import { RelayClient } from '../src/relay-client.js';
+import { Store } from '../src/store.js';
 import { relay, tmp } from './helpers.js';
 
 /** Run the CLI in-process with its own ~/.tunnel and the given extra env. */
@@ -82,6 +85,8 @@ describe('agent names', () => {
     [{ QWEN_CODE: '1' }, 'qwen'],
     [{ PI_CODING_AGENT: 'true', AI_AGENT: 'pi' }, 'pi'],
     [{ AI_AGENT: 'Warp' }, 'warp'],
+    [{ OPENCODE: '1', AI_AGENT: 'warp' }, 'opencode'],
+    [{ CODEX_X: '1', KILO_PID: '1' }, 'codex'],
   ];
   for (const [env, name] of cases) {
     test(`${Object.keys(env).join(' + ')} names the agent ${name}`, () => assert.equal(agentKind(env), name));
@@ -111,6 +116,57 @@ describe('tunnel wait default', () => {
   test('waits 90 seconds by default, as the help says', () => {
     assert.equal(WAIT_DEFAULT_S, 90);
     assert.match(HELP, /tunnel wait \[--timeout 90\]/);
+  });
+
+  /**
+   * Run `tunnel wait` against a stub relay that answers every long poll with no messages, after moving
+   * the clock forward by the seconds it was asked to wait. Returns those seconds, one per poll.
+   */
+  async function pollsOf(...flags: string[]) {
+    const polls: number[] = [];
+    const stub = createHttpServer((req, res) => {
+      const seconds = Number(new URL(req.url ?? '', 'http://stub').searchParams.get('wait'));
+      polls.push(seconds);
+      mock.timers.tick(seconds * 1000);
+      res.setHeader('content-type', 'application/json').end(JSON.stringify({ messages: [], latest: 0 }));
+    });
+    await new Promise<void>((resolve) => stub.listen(0, '127.0.0.1', resolve));
+    const home = tmp('agents-wait');
+    const store = Store.fromEnv({ TUNNEL_HOME: home });
+    store.saveTunnel({
+      name: 't',
+      id: 't_1',
+      relay: `http://127.0.0.1:${(stub.address() as AddressInfo).port}`,
+      key: secretToken(),
+      memberId: 'm_1',
+      memberToken: secretToken(),
+      me: 'claude@laptop',
+      cursor: 0,
+      files: {},
+    });
+    store.setCurrent('t');
+    mock.timers.enable({ apis: ['Date'] }); // only the clock: fetch and AbortSignal.timeout keep real timers
+    try {
+      const r = await cli({ TUNNEL_HOME: home }, 'wait', ...flags);
+      return { polls, ...r };
+    } finally {
+      mock.timers.reset();
+      await new Promise<void>((resolve) => stub.close(() => resolve()));
+    }
+  }
+
+  test('without --timeout, the wait lasts 90 seconds in long polls of at most 50', async () => {
+    const r = await pollsOf();
+    assert.equal(r.code, 0, r.err);
+    assert.deepEqual(r.polls, [50, 40]);
+    assert.match(r.out, /No new messages after 90s/);
+  });
+
+  test('--timeout still sets the wait', async () => {
+    const r = await pollsOf('--timeout', '5');
+    assert.equal(r.code, 0, r.err);
+    assert.deepEqual(r.polls, [5]);
+    assert.match(r.out, /No new messages after 5s/);
   });
 });
 
