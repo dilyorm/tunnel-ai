@@ -25,7 +25,8 @@ export function updateHint(input: HintInput): string | undefined {
   if (input.optOut || input.command === 'update' || input.command === 'relay') return undefined;
   if (!input.seen || !isNewer(input.seen, input.current)) return undefined;
   const last = input.lastHintAt;
+  // Stale means more than a day old, so exactly 24 hours still counts as shown.
   // A time in the future means the clock moved back: treat it as stale, like a missing one.
-  if (typeof last === 'number' && last <= input.now && input.now - last < DAY_MS) return undefined;
+  if (typeof last === 'number' && last <= input.now && input.now - last <= DAY_MS) return undefined;
   return `tunnel ${input.seen} is out (you have ${input.current}). Run \`tunnel update\` to get it.`;
 }

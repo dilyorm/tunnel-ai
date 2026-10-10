@@ -93,8 +93,9 @@ function hintUpdate(ctx: Ctx, command: string) {
       optOut: ctx.env.TUNNEL_NO_UPDATE_CHECK === '1',
     });
     if (!line) return;
-    ctx.err(line);
+    // Save first: if the save fails the hint would repeat on every command, so print nothing instead.
     ctx.store.saveConfig({ ...config, updateHintAt: Date.now() });
+    ctx.err(line);
   } catch {
     // an unreadable or read-only config.json: skip the hint
   }

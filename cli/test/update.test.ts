@@ -1,10 +1,10 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { run } from '../src/cli.js';
 import { RelayClient, seenVersions } from '../src/relay-client.js';
-import { updateHint } from '../src/update.js';
+import { updateBase, updateHint } from '../src/update.js';
 import { isNewer, VERSION } from '../src/version.js';
 import { relay, tmp } from './helpers.js';
 
@@ -68,6 +68,22 @@ describe('relay version header', () => {
 
 const DAY = 24 * 60 * 60 * 1000;
 
+describe('update base', () => {
+  test('defaults to the hosted site', () => {
+    assert.equal(updateBase({}), 'https://tunnel.dilyor.dev');
+  });
+
+  test('uses TUNNEL_DOWNLOAD without trailing slashes', () => {
+    assert.equal(updateBase({ TUNNEL_DOWNLOAD: 'http://mirror.test:8080' }), 'http://mirror.test:8080');
+    assert.equal(updateBase({ TUNNEL_DOWNLOAD: 'http://mirror.test/' }), 'http://mirror.test');
+    assert.equal(updateBase({ TUNNEL_DOWNLOAD: 'http://mirror.test///' }), 'http://mirror.test');
+  });
+
+  test('an empty TUNNEL_DOWNLOAD falls back to the hosted site', () => {
+    assert.equal(updateBase({ TUNNEL_DOWNLOAD: '' }), 'https://tunnel.dilyor.dev');
+  });
+});
+
 describe('update hint rules', () => {
   const base = { command: 'send', seen: '9.9.9', current: '0.2.0', now: 10 * DAY, optOut: false };
   const LINE = 'tunnel 9.9.9 is out (you have 0.2.0). Run `tunnel update` to get it.';
@@ -78,6 +94,11 @@ describe('update hint rules', () => {
 
   test('once a day at most', () => {
     assert.equal(updateHint({ ...base, lastHintAt: base.now - 60 * 60 * 1000 }), undefined);
+    assert.equal(updateHint({ ...base, lastHintAt: base.now - DAY - 1 }), LINE);
+  });
+
+  test('only a hint more than 24 hours old is stale: exactly 24 hours still suppresses', () => {
+    assert.equal(updateHint({ ...base, lastHintAt: base.now - DAY }), undefined);
     assert.equal(updateHint({ ...base, lastHintAt: base.now - DAY - 1 }), LINE);
   });
 
@@ -167,15 +188,45 @@ describe('update hint in the CLI', () => {
     const newer = await relay({ version: '9.9.9' });
     const same = await relay();
     try {
+      // In each case the command succeeds and the relay did report its version, so only the rules keep the hint quiet.
       const selfHosted = await machine(newer).run('open', 'a');
+      assert.equal(selfHosted.code, 0, selfHosted.err);
+      assert.equal(seenVersions.get(newer.url), '9.9.9');
       assert.equal(count(selfHosted.err, 'is out'), 0);
+
       const optedOut = await machine(newer, { TUNNEL_DOWNLOAD: newer.url, TUNNEL_NO_UPDATE_CHECK: '1' }).run('open', 'b');
+      assert.equal(optedOut.code, 0, optedOut.err);
+      assert.equal(seenVersions.get(newer.url), '9.9.9');
       assert.equal(count(optedOut.err, 'is out'), 0);
+
       const current = await machine(same, { TUNNEL_DOWNLOAD: same.url }).run('open', 'c');
+      assert.equal(current.code, 0, current.err);
+      assert.equal(seenVersions.get(same.url), VERSION);
       assert.equal(count(current.err, 'is out'), 0);
     } finally {
       await newer.close();
       await same.close();
+    }
+  });
+
+  test('a config.json that cannot be saved gives no hint, rather than a hint on every command', async () => {
+    const r = await relay({ version: '9.9.9' });
+    try {
+      const m = machine(r, { TUNNEL_DOWNLOAD: r.url });
+      const opened = await m.run('open', 'locked');
+      assert.equal(opened.code, 0, opened.err);
+      // saveConfig writes config.json.<pid>.tmp and renames it over config.json. A directory in the way makes it throw.
+      mkdirSync(join(m.home, `config.json.${process.pid}.tmp`));
+      m.setHintAt(Date.now() - DAY - 1000);
+      for (let i = 0; i < 3; i++) {
+        const res = await m.run('peers', '--json');
+        assert.equal(res.code, 0, res.err);
+        assert.equal(seenVersions.get(r.url), '9.9.9', 'the relay reported a newer version, so the hint was due');
+        assert.equal(res.err, '');
+        assert.ok(Array.isArray(JSON.parse(res.out)), 'stdout stays one JSON document');
+      }
+    } finally {
+      await r.close();
     }
   });
 });
