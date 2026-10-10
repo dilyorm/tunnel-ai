@@ -1,12 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { homedir, hostname, userInfo } from 'node:os';
-import { basename, dirname, extname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { hostname, userInfo } from 'node:os';
+import { basename, dirname, extname, resolve } from 'node:path';
 import { formatCode, parseCode, randomSecret } from './codes.js';
 import { b64, deriveInviteKeys, newKey, open, openText, seal, sealText, sha256, unb64 } from './crypto.js';
-import { TunnelError, UsageError } from './errors.js';
+import { CODEX_NETWORK_HINT, TunnelError, UnreachableError, UsageError } from './errors.js';
 import {
   formatSize,
   isForMe,
@@ -23,9 +22,15 @@ import {
 import { RelayClient } from './relay-client.js';
 import { formatBytes, PLANS } from './relay/plans.js';
 import { Store, type TunnelRecord } from './store.js';
+import type { UpdateHooks } from './update.js';
 
 export const DEFAULT_RELAY = 'https://tunnel.dilyor.dev';
 const LONG_POLL_S = 50;
+/**
+ * How long `tunnel wait` blocks by default. It stays under the 2-minute command limit of
+ * Claude Code and OpenCode, and Gemini CLI's 300 s silence limit.
+ */
+export const WAIT_DEFAULT_S = 90;
 
 export interface IO {
   env: NodeJS.ProcessEnv;
@@ -36,6 +41,8 @@ export interface IO {
   stdin?: () => Promise<string>;
   /** Open a link in the person's browser. bin.ts only does this on a terminal. */
   openUrl?(url: string): void;
+  /** Replaces parts of what `tunnel update` downloads and runs. Tests only. */
+  update?: Partial<UpdateHooks>;
 }
 
 export interface Flags {
@@ -52,6 +59,9 @@ export interface Flags {
   data?: string;
   claude?: boolean;
   codex?: boolean;
+  agent?: string[];
+  all?: boolean;
+  refresh?: boolean;
   force?: boolean;
 }
 
@@ -95,9 +105,26 @@ export async function withDevice<T>(ctx: Ctx, relay: string, fn: (client: RelayC
   }
 }
 
-function agentKind(env: NodeJS.ProcessEnv): string {
+/** Variables coding agents set in the shells they run, checked in order after Claude Code and Codex. Kilo also sets OPENCODE. */
+const AGENT_ENV: [variable: string, name: string][] = [
+  ['KILO_PID', 'kilo'],
+  ['OPENCODE', 'opencode'],
+  ['GEMINI_CLI', 'gemini'],
+  ['CURSOR_AGENT', 'cursor'],
+  ['COPILOT_CLI', 'copilot'],
+  ['GOOSE_TERMINAL', 'goose'],
+  ['CRUSH', 'crush'],
+  ['QWEN_CODE', 'qwen'],
+  ['PI_CODING_AGENT', 'pi'],
+];
+
+/** The default name for this agent, guessed from its shell's environment. Only a default, never used for security. */
+export function agentKind(env: NodeJS.ProcessEnv): string {
   if (env.CLAUDECODE) return 'claude';
   if (Object.keys(env).some((k) => k.startsWith('CODEX_'))) return 'codex';
+  for (const [variable, name] of AGENT_ENV) if (env[variable]) return name;
+  const named = env.AI_AGENT?.toLowerCase();
+  if (named && /^[a-z][a-z0-9-]{0,31}$/.test(named)) return named;
   try {
     return userInfo().username.toLowerCase() || 'agent';
   } catch {
@@ -383,7 +410,7 @@ export async function inboxCmd(ctx: Ctx) {
 
 export async function waitCmd(ctx: Ctx) {
   const rec = ctx.store.tunnel(ctx.flags.tunnel);
-  const timeout = seconds(ctx.flags.timeout, 300);
+  const timeout = seconds(ctx.flags.timeout, WAIT_DEFAULT_S);
   const deadline = Date.now() + timeout * 1000;
   while (!ctx.signal?.aborted) {
     const remaining = deadline - Date.now();
@@ -421,7 +448,10 @@ export async function listenCmd(ctx: Ctx) {
       if (ctx.signal?.aborted) break;
       if (error instanceof TunnelError && (error as TunnelError & { status?: number }).status === 404) throw error;
       failures++;
-      if (failures === 1) ctx.err(`${(error as Error).message} Retrying…`);
+      if (failures === 1) {
+        const codex = error instanceof UnreachableError && ctx.env.CODEX_SANDBOX_NETWORK_DISABLED === '1';
+        ctx.err(`${(error as Error).message} Retrying…${codex ? `\n${CODEX_NETWORK_HINT}` : ''}`);
+      }
       await sleep(Math.min(30_000, 1000 * 2 ** Math.min(failures, 5)), ctx.signal);
     }
   }
@@ -529,23 +559,6 @@ export async function closeCmd(ctx: Ctx) {
   await api(rec).json('DELETE', tunnelPath(rec));
   ctx.store.removeTunnel(rec.name);
   ctx.out(`Closed ${rec.name}. Its messages and files were deleted from the relay.`);
-}
-
-export async function skillsCmd(ctx: Ctx, args: string[]) {
-  if (args[0] !== 'install') throw new UsageError('Usage: tunnel skills install [--claude] [--codex]');
-  const source = fileURLToPath(new URL('../skills/tunnel/SKILL.md', import.meta.url));
-  const skill = readFileSync(source, 'utf8');
-  const both = !ctx.flags.claude && !ctx.flags.codex;
-  const home = ctx.env.TUNNEL_SKILLS_HOME || homedir();
-  const targets: [string, string][] = [];
-  if (both || ctx.flags.claude) targets.push(['Claude Code', join(home, '.claude', 'skills', 'tunnel')]);
-  if (both || ctx.flags.codex) targets.push(['Codex', join(home, '.agents', 'skills', 'tunnel')]);
-  const width = Math.max(...targets.map(([label]) => label.length));
-  for (const [label, dir] of targets) {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'SKILL.md'), skill);
-    ctx.out(`Installed for ${label.padEnd(width)}  ${dir}`);
-  }
 }
 
 export async function relayCmd(ctx: Ctx) {

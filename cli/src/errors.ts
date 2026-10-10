@@ -14,3 +14,10 @@ export class UsageError extends TunnelError {
     super(message, 2);
   }
 }
+
+/** No connection to the relay at all (refused, DNS, offline, or a sandbox without network), as opposed to a timeout. */
+export class UnreachableError extends TunnelError {}
+
+/** Added under an unreachable-relay error when Codex's sandbox (no network by default) is the likely cause. */
+export const CODEX_NETWORK_HINT =
+  "Codex's sandbox blocks network access. Add network_access = true under [sandbox_workspace_write] in ~/.codex/config.toml, or approve running tunnel outside the sandbox.";

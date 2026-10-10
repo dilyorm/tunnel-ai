@@ -2,9 +2,14 @@ import { parseArgs } from 'node:util';
 import * as commands from './commands.js';
 import * as accountCommands from './account-commands.js';
 import type { Ctx, Flags, IO } from './commands.js';
-import { TunnelError } from './errors.js';
+import { CODEX_NETWORK_HINT, TunnelError, UnreachableError } from './errors.js';
+import { seenVersions } from './relay-client.js';
+import { skillsCmd } from './skills.js';
 import { Store } from './store.js';
+import { updateBase, updateCmd, updateHint } from './update.js';
 import { VERSION } from './version.js';
+
+export { CODEX_NETWORK_HINT };
 
 export const HELP = `tunnel ${VERSION} - an end-to-end encrypted tunnel between AI agents on different machines
 
@@ -17,7 +22,7 @@ Talk
   tunnel send "text" [--to name] [--file path]...   Send a message, with files up to your plan's size limit
   tunnel send -                       Read the message text from stdin
   tunnel inbox                        Show new messages for you and mark them read
-  tunnel wait [--timeout 300]         Block until a message arrives, then print it
+  tunnel wait [--timeout 90]          Block until a message arrives, then print it
   tunnel listen                       Print each new message as one line, forever
   tunnel get <file-id> [-o path]      Download a file someone attached
 
@@ -36,8 +41,9 @@ Account
   tunnel upgrade [plus|pro]           Pay for more tunnels, bigger files and longer history
 
 Setup
-  tunnel skills install [--claude] [--codex]   Teach Claude Code and Codex to use tunnel
-  tunnel relay [--port 8787] [--data dir]      Run your own relay
+  tunnel skills install [--agent name] [--all]   Teach your coding agents to use tunnel
+  tunnel update                                  Update tunnel to the latest version
+  tunnel relay [--port 8787] [--data dir]        Run your own relay
 
 Options
   -t, --tunnel <name>   Use this tunnel instead of the current one
@@ -67,9 +73,33 @@ const COMMANDS: Record<string, (ctx: Ctx, args: string[]) => Promise<void>> = {
   logout: accountCommands.logoutCmd,
   account: accountCommands.accountCmd,
   upgrade: accountCommands.upgradeCmd,
-  skills: commands.skillsCmd,
+  skills: skillsCmd,
+  update: updateCmd,
   relay: commands.relayCmd,
 };
+
+/** After a command: say once a day that a newer tunnel is out. The hint must never fail the command. */
+function hintUpdate(ctx: Ctx, command: string) {
+  const seen = seenVersions.get(updateBase(ctx.env));
+  if (!seen) return;
+  try {
+    const config = ctx.store.config();
+    const line = updateHint({
+      command,
+      seen,
+      current: VERSION,
+      now: Date.now(),
+      lastHintAt: config.updateHintAt,
+      optOut: ctx.env.TUNNEL_NO_UPDATE_CHECK === '1',
+    });
+    if (!line) return;
+    // Save first: if the save fails the hint would repeat on every command, so print nothing instead.
+    ctx.store.saveConfig({ ...config, updateHintAt: Date.now() });
+    ctx.err(line);
+  } catch {
+    // an unreadable or read-only config.json: skip the hint
+  }
+}
 
 export async function run(argv: string[], io: IO): Promise<number> {
   let values: Flags & { help?: boolean; version?: boolean };
@@ -93,6 +123,9 @@ export async function run(argv: string[], io: IO): Promise<number> {
         data: { type: 'string' },
         claude: { type: 'boolean' },
         codex: { type: 'boolean' },
+        agent: { type: 'string', multiple: true },
+        all: { type: 'boolean' },
+        refresh: { type: 'boolean' },
         force: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
         version: { type: 'boolean', short: 'v' },
@@ -119,12 +152,16 @@ export async function run(argv: string[], io: IO): Promise<number> {
   }
 
   const ctx: Ctx = { ...io, cwd: io.cwd ?? process.cwd(), flags: values, store: Store.fromEnv(io.env) };
+  seenVersions.clear();
   try {
     await handler(ctx, args);
+    hintUpdate(ctx, command);
     return 0;
   } catch (error) {
     if (error instanceof TunnelError) {
-      io.err(error.message);
+      const codex = error instanceof UnreachableError && io.env.CODEX_SANDBOX_NETWORK_DISABLED === '1';
+      io.err(codex ? `${error.message}\n${CODEX_NETWORK_HINT}` : error.message);
+      hintUpdate(ctx, command);
       return error.exitCode;
     }
     if (io.signal?.aborted) return 130;

@@ -1,12 +1,15 @@
 {
   "name": "tunnel-ai",
-  "version": "0.1.0",
-  "description": "Open an end-to-end encrypted tunnel between AI agents on different machines.",
+  "version": "0.2.0",
+  "description": "Open an end-to-end encrypted tunnel between AI coding agents (Claude Code, Codex, Cursor, Gemini CLI, OpenCode) on different machines.",
   "keywords": [
     "ai",
     "agents",
     "claude-code",
     "codex",
+    "cursor",
+    "gemini-cli",
+    "opencode",
     "tunnel",
     "cli",
     "e2e"

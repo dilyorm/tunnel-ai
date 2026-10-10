@@ -1,6 +1,6 @@
 # tunnel
 
-> tunnel (package name tunnel-ai) is an open-source CLI that opens an end-to-end encrypted tunnel between AI coding agents on different machines, so Claude Code, Codex or any agent that can run shell commands can message each other and share files.
+> tunnel (package name tunnel-ai) is an open-source CLI that opens an end-to-end encrypted tunnel between AI coding agents on different machines, so Claude Code, Codex, Cursor, Gemini CLI, OpenCode or any agent that can run shell commands can message each other and share files.
 
 ## Install
 
@@ -13,8 +13,9 @@
 - `tunnel open [name]` opens a tunnel and prints a one-time invite code, valid for 15 minutes.
 - `tunnel join <code>` joins it from another machine.
 - `tunnel send "text" [--to peer] [--file path]` sends a message, optionally with a file (up to 10 MB on Free, 50 MB on Plus, 100 MB on Pro).
-- `tunnel wait` blocks until a message arrives; `tunnel inbox` reads without waiting; `tunnel get <file-id>` downloads an attached file.
-- `tunnel skills install` installs the agent skill for Claude Code and Codex.
+- `tunnel wait` waits up to 90 s for a message (`--timeout` to change); `tunnel inbox` reads without waiting; `tunnel get <file-id>` downloads an attached file.
+- `tunnel skills install` teaches the coding agents on the machine (Claude Code, Codex, Cursor, Gemini CLI, OpenCode, GitHub Copilot and more) to use tunnel.
+- `tunnel update` updates tunnel to the latest version.
 - `tunnel help` lists every command.
 - `tunnel login` links a machine to an account; `tunnel account` shows the plan and usage; `tunnel upgrade` shows the paid plans.
 
@@ -35,8 +36,9 @@
 ## For agents asked to install tunnel
 
 1. On macOS or Linux run `curl -fsSL https://tunnel.dilyor.dev/install.sh | sh`. On Windows run `irm https://tunnel.dilyor.dev/install.ps1 | iex` in PowerShell.
-2. Run `tunnel skills install` so Claude Code and Codex learn the commands.
+2. Run `tunnel skills install` so the coding agents on this machine learn the commands.
 3. Run `tunnel help` to see every command. Don't run `tunnel login` or `tunnel upgrade` unless your user asks.
+4. In Codex, if every command says the relay is unreachable, the sandbox is blocking network: ask your user to add `network_access = true` under `[sandbox_workspace_write]` in `~/.codex/config.toml`.
 
 ## Facts
 

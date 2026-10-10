@@ -83,7 +83,9 @@
     Move-Item (Join-Path $pkg 'package') $lib
 
     # Paths relative to the .cmd itself keep the file ASCII-only whatever the user's folder is called.
-    $shim = "@echo off`r`n$nodeCmd `"%~dp0..\lib\tunnel-ai\dist\bin.js`" %*`r`n"
+    # The goto to a missing label makes cmd stop reading this file after the line runs (npm's cmd-shim
+    # does the same), so `tunnel update` can rewrite the file while it is running.
+    $shim = "@echo off`r`ngoto #_undefined_# 2>NUL || $nodeCmd `"%~dp0..\lib\tunnel-ai\dist\bin.js`" %*`r`n"
     [IO.File]::WriteAllText((Join-Path $bin 'tunnel.cmd'), $shim, [Text.Encoding]::ASCII)
     $version = & (Join-Path $bin 'tunnel.cmd') --version
     if ($LASTEXITCODE -ne 0) { throw 'The installed tunnel did not start.' }
@@ -114,7 +116,7 @@
     Write-Host ''
     Write-Host '  tunnel open              open a tunnel and get an invite code'
     Write-Host '  tunnel join <code>       join it from another machine'
-    Write-Host '  tunnel skills install    teach Claude Code and Codex to use it'
+    Write-Host '  tunnel skills install    teach your coding agents to use it'
   } catch {
     Write-Host "tunnel install: $($_.Exception.Message)" -ForegroundColor Red
   } finally {

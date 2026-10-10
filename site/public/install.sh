@@ -157,7 +157,7 @@ EOF
   say ""
   say "  tunnel open              open a tunnel and get an invite code"
   say "  tunnel join <code>       join it from another machine"
-  say "  tunnel skills install    teach Claude Code and Codex to use it"
+  say "  tunnel skills install    teach your coding agents to use it"
 }
 
 main "$@"
