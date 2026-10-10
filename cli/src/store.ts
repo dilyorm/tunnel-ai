@@ -26,6 +26,8 @@ export interface Config {
   current?: string;
   relay?: string;
   devices: Record<string, { id: string; token: string }>;
+  /** When the "newer tunnel is out" hint was last shown, in ms. At most once a day. */
+  updateHintAt?: number;
 }
 
 export class Store {

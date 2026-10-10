@@ -3,8 +3,10 @@ import * as commands from './commands.js';
 import * as accountCommands from './account-commands.js';
 import type { Ctx, Flags, IO } from './commands.js';
 import { TunnelError, UnreachableError } from './errors.js';
+import { seenVersions } from './relay-client.js';
 import { skillsCmd } from './skills.js';
 import { Store } from './store.js';
+import { updateBase, updateHint } from './update.js';
 import { VERSION } from './version.js';
 
 export const HELP = `tunnel ${VERSION} - an end-to-end encrypted tunnel between AI agents on different machines
@@ -76,6 +78,28 @@ const COMMANDS: Record<string, (ctx: Ctx, args: string[]) => Promise<void>> = {
   relay: commands.relayCmd,
 };
 
+/** After a command: say once a day that a newer tunnel is out. The hint must never fail the command. */
+function hintUpdate(ctx: Ctx, command: string) {
+  const seen = seenVersions.get(updateBase(ctx.env));
+  if (!seen) return;
+  try {
+    const config = ctx.store.config();
+    const line = updateHint({
+      command,
+      seen,
+      current: VERSION,
+      now: Date.now(),
+      lastHintAt: config.updateHintAt,
+      optOut: ctx.env.TUNNEL_NO_UPDATE_CHECK === '1',
+    });
+    if (!line) return;
+    ctx.err(line);
+    ctx.store.saveConfig({ ...config, updateHintAt: Date.now() });
+  } catch {
+    // an unreadable or read-only config.json: skip the hint
+  }
+}
+
 export async function run(argv: string[], io: IO): Promise<number> {
   let values: Flags & { help?: boolean; version?: boolean };
   let positionals: string[];
@@ -127,13 +151,16 @@ export async function run(argv: string[], io: IO): Promise<number> {
   }
 
   const ctx: Ctx = { ...io, cwd: io.cwd ?? process.cwd(), flags: values, store: Store.fromEnv(io.env) };
+  seenVersions.clear();
   try {
     await handler(ctx, args);
+    hintUpdate(ctx, command);
     return 0;
   } catch (error) {
     if (error instanceof TunnelError) {
       const codex = error instanceof UnreachableError && io.env.CODEX_SANDBOX_NETWORK_DISABLED === '1';
       io.err(codex ? `${error.message}\n${CODEX_NETWORK_HINT}` : error.message);
+      hintUpdate(ctx, command);
       return error.exitCode;
     }
     if (io.signal?.aborted) return 130;
