@@ -54,6 +54,7 @@ export interface UpdateHooks {
   capture(command: string, args: string[]): Promise<{ code: number; stdout: string }>;
 }
 
+/** The real network, filesystem and child processes behind `tunnel update`. */
 export function realHooks(): UpdateHooks {
   return {
     binPath: fileURLToPath(new URL('./bin.js', import.meta.url)),
@@ -64,9 +65,11 @@ export function realHooks(): UpdateHooks {
     tmpdir,
     spawn: (command, args, { env, shell }) =>
       new Promise((resolve) => {
-        // A shell is only for npm.cmd on Windows, whose arguments are fixed words, so one command line is safe.
+        // A shell is only for npm.cmd on Windows. One of its arguments is the release URL, which comes from
+        // $TUNNEL_DOWNLOAD: updateCmd has already refused the characters cmd.exe acts on, and quoting each
+        // word keeps the rest together.
         const child = shell
-          ? spawn([command, ...args].join(' '), { env, shell: true, stdio: 'inherit' })
+          ? spawn([command, ...args.map((word) => `"${word}"`)].join(' '), { env, shell: true, stdio: 'inherit' })
           : spawn(command, args, { env, stdio: 'inherit' });
         child.on('error', () => resolve(127));
         child.on('close', (code) => resolve(code ?? 1));
@@ -80,6 +83,7 @@ export function realHooks(): UpdateHooks {
   };
 }
 
+/** How tunnel was installed: by the install script into `dir`, by npm, or some other way. */
 export type Layout = { kind: 'script'; dir: string } | { kind: 'npm' } | { kind: 'unknown' };
 
 /** How this tunnel was installed, from where its bin.js lives. Works on / and \ paths alike. */
@@ -99,6 +103,7 @@ export function detectLayout(binPath: string, exists: (path: string) => boolean)
 export async function updateCmd(ctx: Ctx) {
   const hooks: UpdateHooks = { ...realHooks(), ...ctx.update };
   const base = updateBase(ctx.env);
+  checkBase(base);
   const latest = await latestVersion(hooks, base);
   if (!isNewer(latest, VERSION)) {
     ctx.out(`Already up to date (${VERSION}).`);
@@ -121,6 +126,22 @@ export async function updateCmd(ctx: Ctx) {
   }
   ctx.out(`Updated tunnel ${VERSION} → ${now}.`);
   await hooks.spawn(hooks.execPath, [hooks.binPath, 'skills', 'install', '--refresh'], { env: ctx.env, shell: false });
+}
+
+/** Refuse a release base that isn't a plain URL: it reaches `npm i -g` on a cmd.exe command line and the installers. */
+function checkBase(base: string): void {
+  let url: URL | undefined;
+  try {
+    url = new URL(base);
+  } catch {
+    // reported below
+  }
+  if (!url || (url.protocol !== 'https:' && url.protocol !== 'http:')) {
+    throw new TunnelError(`TUNNEL_DOWNLOAD must be a full https:// URL, like https://tunnel.example.com (it is "${base}").`);
+  }
+  if (/["&|<>^%\s]/.test(base)) {
+    throw new TunnelError(`TUNNEL_DOWNLOAD can't contain spaces or any of " & | < > ^ % (it is "${base}").`);
+  }
 }
 
 async function latestVersion(hooks: UpdateHooks, base: string): Promise<string> {
@@ -148,14 +169,20 @@ async function latestVersion(hooks: UpdateHooks, base: string): Promise<string> 
 }
 
 async function download(hooks: UpdateHooks, url: string): Promise<string> {
+  const failed = `Couldn't download ${url}. Your current tunnel ${VERSION} still works.`;
   let res: Response;
   try {
     res = await hooks.fetch(url, { signal: AbortSignal.timeout(60_000) });
   } catch {
-    throw new TunnelError(`Couldn't download ${url}. Your current tunnel ${VERSION} still works.`);
+    throw new TunnelError(failed);
   }
   if (!res.ok) throw new TunnelError(`Couldn't download ${url} (${res.status}). Your current tunnel ${VERSION} still works.`);
-  return res.text();
+  try {
+    // The connection can drop, or the timeout fire, while the body is still arriving.
+    return await res.text();
+  } catch {
+    throw new TunnelError(failed);
+  }
 }
 
 /** Re-run the install script into the folder tunnel already lives in, leaving PATH alone. */
@@ -163,16 +190,28 @@ async function runInstaller(ctx: Ctx, hooks: UpdateHooks, base: string, dir: str
   const windows = hooks.platform === 'win32';
   const label = windows ? 'install.ps1' : 'install.sh';
   const script = await download(hooks, `${base}/${label}`);
-  const file = join(hooks.tmpdir(), `tunnel-${randomUUID()}-${label}`);
-  writeFileSync(file, script);
+  const folder = hooks.tmpdir();
+  const file = join(folder, `tunnel-${randomUUID()}-${label}`);
   const env = { ...ctx.env, TUNNEL_INSTALL: dir, TUNNEL_NO_MODIFY_PATH: '1', TUNNEL_DOWNLOAD: base };
   try {
+    try {
+      writeFileSync(file, script);
+    } catch (error) {
+      const reason = (error as NodeJS.ErrnoException).code;
+      throw new TunnelError(
+        `Couldn't save the installer in ${folder}${reason ? ` (${reason})` : ''}. Your current tunnel ${VERSION} still works.`,
+      );
+    }
     const code = windows
       ? await hooks.spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', file], { env, shell: false })
       : await hooks.spawn('sh', [file], { env, shell: false });
     return { code, label };
   } finally {
-    rmSync(file, { force: true });
+    try {
+      rmSync(file, { force: true });
+    } catch {
+      // Best effort: on Windows a virus scanner can hold the file for a moment. The install itself is done.
+    }
   }
 }
 

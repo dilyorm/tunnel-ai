@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CODEX_NETWORK_HINT, run } from '../src/cli.js';
 import { RelayClient, seenVersions } from '../src/relay-client.js';
@@ -267,7 +267,16 @@ describe('tunnel update', () => {
   }
 
   /** Stand-ins for the network and child processes. `health` is what /v1/health answers. */
-  function fake(o: { binPath: string; files?: string[]; platform?: NodeJS.Platform; health?: () => Response; installExit?: number; after?: string }) {
+  function fake(o: {
+    binPath: string;
+    files?: string[];
+    platform?: NodeJS.Platform;
+    health?: () => Response;
+    /** What install.sh / install.ps1 downloads as. */
+    installer?: () => Response;
+    installExit?: number;
+    after?: string;
+  }) {
     const calls: Call[] = [];
     const fetched: string[] = [];
     const dir = tmp('update-tmp');
@@ -281,7 +290,7 @@ describe('tunnel update', () => {
         const url = String(input);
         fetched.push(url);
         if (url.endsWith('/v1/health')) return o.health ? o.health() : Response.json({ ok: true, version: '9.9.9' });
-        if (/\/install\.(sh|ps1)$/.test(url)) return new Response('echo installing\n');
+        if (/\/install\.(sh|ps1)$/.test(url)) return o.installer ? o.installer() : new Response('echo installing\n');
         return new Response('missing', { status: 404 });
       }) as typeof fetch,
       spawn: async (command, args, options) => {
@@ -356,8 +365,12 @@ describe('tunnel update', () => {
     assert.equal(install.command, 'powershell');
     assert.deepEqual(install.args.slice(0, 4), ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File']);
     assert.match(install.args[4], /install\.ps1$/);
+    assert.equal(install.shell, false);
     assert.equal(install.env?.TUNNEL_INSTALL, 'C:\\Users\\A B\\.tunnel');
+    assert.equal(install.env?.TUNNEL_NO_MODIFY_PATH, '1');
+    assert.equal(install.env?.TUNNEL_DOWNLOAD, 'https://dl.test');
     assert.equal(f.fetched[1], 'https://dl.test/install.ps1');
+    assert.deepEqual(readdirSync(f.dir), [], 'the downloaded installer is deleted');
   });
 
   test('an npm install runs npm i -g on the tarball, through a shell on Windows', async () => {
@@ -389,6 +402,7 @@ describe('tunnel update', () => {
     assert.equal(r.code, 1);
     assert.equal(r.err, `The update failed (install.sh exited with 3). Your current tunnel ${VERSION} still works.\n`);
     assert.equal(f.calls.length, 1);
+    assert.deepEqual(readdirSync(f.dir), [], 'the downloaded installer is deleted when it fails too');
   });
 
   test('an installer that exits 0 without updating is caught by the version check', async () => {
@@ -400,6 +414,7 @@ describe('tunnel update', () => {
       `The update failed (install.sh finished, but tunnel still reports ${VERSION}). Your current tunnel ${VERSION} still works.\n`,
     );
     assert.equal(f.calls.length, 2, 'no skills refresh');
+    assert.deepEqual(readdirSync(f.dir), [], 'the downloaded installer is deleted');
   });
 
   test('an unreachable update server, with the Codex hint inside Codex', async () => {
@@ -423,5 +438,107 @@ describe('tunnel update', () => {
     assert.equal(r.code, 1);
     assert.equal(r.err, "dl.test didn't say which version is latest. Try again later.\n");
     assert.deepEqual(f.calls, []);
+  });
+
+  test('a failing npm is reported as npm, and nothing runs after it', async () => {
+    const f = fake({ binPath: '/usr/lib/node_modules/tunnel-ai/dist/bin.js', installExit: 4 });
+    const r = await update(f.hooks);
+    assert.equal(r.code, 1);
+    assert.equal(r.err, `The update failed (npm exited with 4). Your current tunnel ${VERSION} still works.\n`);
+    assert.equal(f.calls.length, 1, 'no version check, no skills refresh');
+  });
+
+  test('a timeout on the update server is reported without the Codex hint', async () => {
+    const slow = () => {
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    };
+    const r = await update(fake({ binPath: SCRIPT, health: slow }).hooks, {
+      TUNNEL_DOWNLOAD: 'https://dl.test',
+      CODEX_SANDBOX_NETWORK_DISABLED: '1',
+    });
+    assert.equal(r.code, 1);
+    assert.equal(r.err, "Couldn't reach dl.test to check for updates.\n");
+  });
+
+  test('a TUNNEL_DOWNLOAD that is not a full URL is refused before anything is fetched or run', async () => {
+    for (const bad of ['dl.example.com', 'dl.example.com:8080', 'ftp://dl.test', 'https://']) {
+      const f = fake({ binPath: SCRIPT, files: ['/home/a/.tunnel/bin/tunnel'] });
+      const r = await update(f.hooks, { TUNNEL_DOWNLOAD: bad });
+      assert.equal(r.code, 1, bad);
+      assert.equal(
+        r.err,
+        `TUNNEL_DOWNLOAD must be a full https:// URL, like https://tunnel.example.com (it is "${bad.replace(/\/+$/, '')}").\n`,
+      );
+      assert.deepEqual(f.fetched, []);
+      assert.deepEqual(f.calls, []);
+    }
+  });
+
+  test('a TUNNEL_DOWNLOAD with characters cmd.exe would act on is refused, before anything is fetched or run', async () => {
+    const bads = ['https://dl.test/a&calc', 'https://dl.test/a|b', 'https://dl.test/<a>', 'https://dl.test/a^b'];
+    for (const bad of [...bads, 'https://dl.test/%PATH%', 'https://dl.test/a b', 'https://dl.test/"a']) {
+      const f = fake({ binPath: 'C:\\npm\\node_modules\\tunnel-ai\\dist\\bin.js', platform: 'win32' });
+      const r = await update(f.hooks, { TUNNEL_DOWNLOAD: bad });
+      assert.equal(r.code, 1, bad);
+      assert.equal(r.err, `TUNNEL_DOWNLOAD can't contain spaces or any of " & | < > ^ % (it is "${bad}").\n`);
+      assert.deepEqual(f.fetched, []);
+      assert.deepEqual(f.calls, []);
+    }
+  });
+
+  test('a download that dies partway is reported like any other failed download', async () => {
+    const cut = () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new TypeError('terminated'));
+          },
+        }),
+      );
+    const f = fake({ binPath: SCRIPT, files: ['/home/a/.tunnel/bin/tunnel'], installer: cut });
+    const r = await update(f.hooks);
+    assert.equal(r.code, 1);
+    assert.equal(r.err, `Couldn't download https://dl.test/install.sh. Your current tunnel ${VERSION} still works.\n`);
+    assert.deepEqual(f.calls, []);
+    assert.deepEqual(readdirSync(f.dir), []);
+  });
+
+  test('an installer the server does not serve is reported with its status', async () => {
+    const f = fake({ binPath: SCRIPT, files: ['/home/a/.tunnel/bin/tunnel'], installer: () => new Response('no', { status: 503 }) });
+    const r = await update(f.hooks);
+    assert.equal(r.code, 1);
+    assert.equal(r.err, `Couldn't download https://dl.test/install.sh (503). Your current tunnel ${VERSION} still works.\n`);
+    assert.deepEqual(f.calls, []);
+  });
+
+  test('an installer that cannot be saved is reported, and nothing runs', async () => {
+    const f = fake({ binPath: SCRIPT, files: ['/home/a/.tunnel/bin/tunnel'] });
+    const missing = join(f.dir, 'not-a-folder');
+    const r = await update({ ...f.hooks, tmpdir: () => missing });
+    assert.equal(r.code, 1);
+    assert.equal(r.err, `Couldn't save the installer in ${missing} (ENOENT). Your current tunnel ${VERSION} still works.\n`);
+    assert.deepEqual(f.calls, []);
+  });
+
+  test('a temp file that cannot be deleted does not stop the version check or the skills refresh', async () => {
+    const f = fake({ binPath: SCRIPT, files: ['/home/a/.tunnel/bin/tunnel'] });
+    const installer = f.hooks.spawn!;
+    // Put a folder where the installer file was, so deleting it throws, as a virus scanner's lock can on Windows.
+    f.hooks.spawn = async (command, args, options) => {
+      if (command === 'sh') {
+        rmSync(args[0]);
+        mkdirSync(args[0]);
+      }
+      return installer(command, args, options);
+    };
+    const r = await update(f.hooks);
+    assert.equal(r.code, 0, r.err);
+    assert.equal(r.err, '');
+    assert.equal(r.out, `Updated tunnel ${VERSION} → 9.9.9.\n`);
+    assert.deepEqual(
+      f.calls.map((call) => call.command),
+      ['sh', '/node', '/node'],
+    );
+    assert.deepEqual(f.calls[2].args, [SCRIPT, 'skills', 'install', '--refresh']);
   });
 });
