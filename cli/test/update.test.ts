@@ -275,7 +275,10 @@ describe('tunnel update', () => {
     /** What install.sh / install.ps1 downloads as. */
     installer?: () => Response;
     installExit?: number;
+    /** What `bin.js --version` prints. It runs once after a failed install and once after a good one, never both. */
     after?: string;
+    /** The exit code of that `--version` run: non-zero means tunnel no longer starts. */
+    afterExit?: number;
   }) {
     const calls: Call[] = [];
     const fetched: string[] = [];
@@ -299,7 +302,7 @@ describe('tunnel update', () => {
       },
       capture: async (command, args) => {
         calls.push({ command, args });
-        return { code: 0, stdout: `${o.after ?? '9.9.9'}\n` };
+        return o.afterExit ? { code: o.afterExit, stdout: '' } : { code: 0, stdout: `${o.after ?? '9.9.9'}\n` };
       },
     };
     return { hooks, calls, fetched, dir };
@@ -396,13 +399,46 @@ describe('tunnel update', () => {
     assert.deepEqual(f.calls, []);
   });
 
-  test('a failing installer is reported and skills are left alone', async () => {
-    const f = fake({ binPath: SCRIPT, files: ['/home/a/.tunnel/bin/tunnel'], installExit: 3 });
+  /** The same install commands `tunnel update` prints when it can't update itself, for the base https://dl.test. */
+  const REINSTALL = [
+    '  macOS and Linux:  curl -fsSL https://dl.test/install.sh | sh',
+    '  Windows:          irm https://dl.test/install.ps1 | iex',
+    '  npm:              npm i -g https://dl.test/tunnel-ai.tgz',
+  ].join('\n');
+  const VERSION_PROBE = { command: '/node', args: [SCRIPT, '--version'] };
+
+  test('a failing installer is reported, and skills are left alone, when tunnel still runs', async () => {
+    const f = fake({ binPath: SCRIPT, files: ['/home/a/.tunnel/bin/tunnel'], installExit: 3, after: VERSION });
     const r = await update(f.hooks);
     assert.equal(r.code, 1);
     assert.equal(r.err, `The update failed (install.sh exited with 3). Your current tunnel ${VERSION} still works.\n`);
-    assert.equal(f.calls.length, 1);
+    assert.equal(f.calls.length, 2, 'the installer, then the check that tunnel still starts');
+    assert.deepEqual(f.calls[1], VERSION_PROBE);
     assert.deepEqual(readdirSync(f.dir), [], 'the downloaded installer is deleted when it fails too');
+  });
+
+  test('a failing installer that left tunnel unable to start says so, and how to reinstall', async () => {
+    const f = fake({ binPath: SCRIPT, files: ['/home/a/.tunnel/bin/tunnel'], installExit: 3, afterExit: 1 });
+    const r = await update(f.hooks);
+    assert.equal(r.code, 1);
+    assert.equal(
+      r.err,
+      `The update failed (install.sh exited with 3), and tunnel no longer starts. Reinstall it:\n${REINSTALL}\n`,
+    );
+    assert.doesNotMatch(r.err, /still works/);
+    assert.equal(f.calls.length, 2, 'no skills refresh');
+    assert.deepEqual(f.calls[1], VERSION_PROBE);
+    assert.deepEqual(readdirSync(f.dir), [], 'the downloaded installer is deleted when it fails too');
+  });
+
+  test('a failing installer after which tunnel reports another version does not claim it still works', async () => {
+    for (const after of ['0.1.0', '9.9.9']) {
+      const f = fake({ binPath: SCRIPT, files: ['/home/a/.tunnel/bin/tunnel'], installExit: 3, after });
+      const r = await update(f.hooks);
+      assert.equal(r.code, 1);
+      assert.equal(r.err, `The update failed (install.sh exited with 3), and tunnel reports ${after}. Reinstall it:\n${REINSTALL}\n`);
+      assert.equal(f.calls.length, 2, 'no skills refresh');
+    }
   });
 
   test('an installer that exits 0 without updating is caught by the version check', async () => {
@@ -415,6 +451,31 @@ describe('tunnel update', () => {
     );
     assert.equal(f.calls.length, 2, 'no skills refresh');
     assert.deepEqual(readdirSync(f.dir), [], 'the downloaded installer is deleted');
+  });
+
+  test('an installer that exits 0 but leaves tunnel unable to start says so, and how to reinstall', async () => {
+    const f = fake({ binPath: SCRIPT, files: ['/home/a/.tunnel/bin/tunnel'], afterExit: 1 });
+    const r = await update(f.hooks);
+    assert.equal(r.code, 1);
+    assert.equal(
+      r.err,
+      `The update failed (install.sh finished, but tunnel no longer starts). Reinstall it:\n${REINSTALL}\n`,
+    );
+    assert.doesNotMatch(r.err, /still works/);
+    assert.equal(f.calls.length, 2, 'no skills refresh');
+    assert.deepEqual(f.calls[1], VERSION_PROBE);
+    assert.deepEqual(readdirSync(f.dir), [], 'the downloaded installer is deleted');
+  });
+
+  test('an installer that exits 0 after which tunnel reports an older version or nothing does not claim it still works', async () => {
+    const older = fake({ binPath: SCRIPT, files: ['/home/a/.tunnel/bin/tunnel'], after: '0.1.0' });
+    const r = await update(older.hooks);
+    assert.equal(r.code, 1);
+    assert.equal(r.err, `The update failed (install.sh finished, but tunnel reports 0.1.0). Reinstall it:\n${REINSTALL}\n`);
+    assert.equal(older.calls.length, 2, 'no skills refresh');
+    // Exit 0 with no output is not a tunnel that runs.
+    const silent = await update(fake({ binPath: SCRIPT, files: ['/home/a/.tunnel/bin/tunnel'], after: '' }).hooks);
+    assert.equal(silent.err, `The update failed (install.sh finished, but tunnel no longer starts). Reinstall it:\n${REINSTALL}\n`);
   });
 
   test('an unreachable update server, with the Codex hint inside Codex', async () => {
@@ -440,12 +501,46 @@ describe('tunnel update', () => {
     assert.deepEqual(f.calls, []);
   });
 
-  test('a failing npm is reported as npm, and nothing runs after it', async () => {
-    const f = fake({ binPath: '/usr/lib/node_modules/tunnel-ai/dist/bin.js', installExit: 4 });
-    const r = await update(f.hooks);
-    assert.equal(r.code, 1);
-    assert.equal(r.err, `The update failed (npm exited with 4). Your current tunnel ${VERSION} still works.\n`);
-    assert.equal(f.calls.length, 1, 'no version check, no skills refresh');
+  describe('when npm fails', () => {
+    const NPM_BIN = '/usr/lib/node_modules/tunnel-ai/dist/bin.js';
+    const npmProbe = { command: '/node', args: [NPM_BIN, '--version'] };
+
+    test('it is reported as npm, and only the check that tunnel still runs follows', async () => {
+      const f = fake({ binPath: NPM_BIN, installExit: 4, after: VERSION });
+      const r = await update(f.hooks);
+      assert.equal(r.code, 1);
+      assert.equal(r.err, `The update failed (npm exited with 4). Your current tunnel ${VERSION} still works.\n`);
+      assert.equal(f.calls.length, 2, 'npm, then the check that tunnel still starts; no skills refresh');
+      assert.deepEqual(f.calls[1], npmProbe);
+    });
+
+    test('and tunnel no longer starts, it says so and how to reinstall', async () => {
+      const f = fake({ binPath: NPM_BIN, installExit: 4, afterExit: 1 });
+      const r = await update(f.hooks);
+      assert.equal(r.code, 1);
+      assert.equal(r.err, `The update failed (npm exited with 4), and tunnel no longer starts. Reinstall it:\n${REINSTALL}\n`);
+      assert.doesNotMatch(r.err, /still works/);
+      assert.equal(f.calls.length, 2, 'no skills refresh');
+      assert.deepEqual(f.calls[1], npmProbe);
+    });
+
+    test('and npm exits 0 but tunnel no longer starts, it says so and how to reinstall', async () => {
+      const f = fake({ binPath: NPM_BIN, afterExit: 1 });
+      const r = await update(f.hooks);
+      assert.equal(r.code, 1);
+      assert.equal(r.err, `The update failed (npm finished, but tunnel no longer starts). Reinstall it:\n${REINSTALL}\n`);
+      assert.equal(f.calls.length, 2, 'no skills refresh');
+    });
+
+    test('and npm exits 0 without updating, tunnel still works', async () => {
+      const f = fake({ binPath: NPM_BIN, after: VERSION });
+      const r = await update(f.hooks);
+      assert.equal(r.code, 1);
+      assert.equal(
+        r.err,
+        `The update failed (npm finished, but tunnel still reports ${VERSION}). Your current tunnel ${VERSION} still works.\n`,
+      );
+    });
   });
 
   test('a timeout on the update server is reported without the Codex hint', async () => {
@@ -460,14 +555,14 @@ describe('tunnel update', () => {
     assert.equal(r.err, "Couldn't reach dl.test to check for updates.\n");
   });
 
-  test('a TUNNEL_DOWNLOAD that is not a full URL is refused before anything is fetched or run', async () => {
+  test('a TUNNEL_DOWNLOAD that is not an http:// or https:// URL is refused before anything is fetched or run', async () => {
     for (const bad of ['dl.example.com', 'dl.example.com:8080', 'ftp://dl.test', 'https://']) {
       const f = fake({ binPath: SCRIPT, files: ['/home/a/.tunnel/bin/tunnel'] });
       const r = await update(f.hooks, { TUNNEL_DOWNLOAD: bad });
       assert.equal(r.code, 1, bad);
       assert.equal(
         r.err,
-        `TUNNEL_DOWNLOAD must be a full https:// URL, like https://tunnel.example.com (it is "${bad.replace(/\/+$/, '')}").\n`,
+        `TUNNEL_DOWNLOAD must be an http:// or https:// URL, like https://tunnel.example.com (it is "${bad.replace(/\/+$/, '')}").\n`,
       );
       assert.deepEqual(f.fetched, []);
       assert.deepEqual(f.calls, []);
@@ -540,5 +635,15 @@ describe('tunnel update', () => {
       ['sh', '/node', '/node'],
     );
     assert.deepEqual(f.calls[2].args, [SCRIPT, 'skills', 'install', '--refresh']);
+  });
+});
+
+describe('install.ps1', () => {
+  test('is plain ASCII: tunnel update saves it without a BOM, and Windows PowerShell 5.1 would read that as ANSI', () => {
+    const text = readFileSync(new URL('../../site/public/install.ps1', import.meta.url)).toString('latin1');
+    // latin1 turns each byte into one character, so a character above 0x7F is a byte above 0x7F.
+    const at = text.search(/[^\x00-\x7f]/);
+    const line = text.slice(0, at).split('\n').length;
+    assert.ok(at === -1, `site/public/install.ps1 line ${line} has a byte above 0x7F: ${JSON.stringify(text.split('\n')[line - 1])}`);
   });
 });

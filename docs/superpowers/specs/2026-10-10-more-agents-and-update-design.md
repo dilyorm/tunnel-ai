@@ -210,7 +210,10 @@ The installed file `dist/bin.js` resolves to one of three layouts.
 | Health check fails | `Couldn't reach tunnel.dilyor.dev to check for updates.` plus the unreachable/Codex hint rules above | 1 |
 | Installer or npm fails | `The update failed (<command> exited with <code>). Your current tunnel 0.2.0 still works.` | 1 |
 | Installer exits 0 but the version didn't change | `The update failed (<command> finished, but tunnel still reports 0.2.0). Your current tunnel 0.2.0 still works.` | 1 |
+| Update failed and tunnel no longer starts | `The update failed (<command> exited with <code>), and tunnel no longer starts. Reinstall it:` followed by the install commands | 1 |
 | Health answer has no x.y.z version | `<host> didn't say which version is latest. Try again later.` | 1 |
+
+Once the installer or npm has run, "still works" is printed only after `<node> <dist/bin.js> --version` confirms the old version still runs.
 
 The installers replace files in place.
 

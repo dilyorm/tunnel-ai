@@ -112,18 +112,14 @@ export async function updateCmd(ctx: Ctx) {
   const layout = detectLayout(hooks.binPath, hooks.exists);
   if (layout.kind === 'unknown') throw new TunnelError(updateByHand(hooks.binPath, base));
   const step = layout.kind === 'script' ? await runInstaller(ctx, hooks, base, layout.dir) : await runNpm(ctx, hooks, base);
-  if (step.code !== 0) {
-    throw new TunnelError(`The update failed (${step.label} exited with ${step.code}). Your current tunnel ${VERSION} still works.`);
-  }
   // Both installs replace the files in place, so the same bin.js now holds the new version.
   // install.ps1 reports errors but exits 0, so the version is what proves it worked.
+  // Both also delete the old files before moving the new ones in, so after any failure only running
+  // bin.js again shows whether tunnel still starts.
   const after = await hooks.capture(hooks.execPath, [hooks.binPath, '--version']);
   const now = after.stdout.trim();
-  if (after.code !== 0 || !isNewer(now, VERSION)) {
-    throw new TunnelError(
-      `The update failed (${step.label} finished, but tunnel still reports ${now || VERSION}). Your current tunnel ${VERSION} still works.`,
-    );
-  }
+  if (step.code !== 0) throw updateFailed(step.label, step.code, after, base);
+  if (after.code !== 0 || !isNewer(now, VERSION)) throw updateFailed(step.label, undefined, after, base);
   ctx.out(`Updated tunnel ${VERSION} → ${now}.`);
   await hooks.spawn(hooks.execPath, [hooks.binPath, 'skills', 'install', '--refresh'], { env: ctx.env, shell: false });
 }
@@ -137,7 +133,7 @@ function checkBase(base: string): void {
     // reported below
   }
   if (!url || (url.protocol !== 'https:' && url.protocol !== 'http:')) {
-    throw new TunnelError(`TUNNEL_DOWNLOAD must be a full https:// URL, like https://tunnel.example.com (it is "${base}").`);
+    throw new TunnelError(`TUNNEL_DOWNLOAD must be an http:// or https:// URL, like https://tunnel.example.com (it is "${base}").`);
   }
   if (/["&|<>^%\s]/.test(base)) {
     throw new TunnelError(`TUNNEL_DOWNLOAD can't contain spaces or any of " & | < > ^ % (it is "${base}").`);
@@ -223,12 +219,48 @@ async function runNpm(ctx: Ctx, hooks: UpdateHooks, base: string) {
   return { code, label: 'npm' };
 }
 
+/** The three ways to install tunnel by hand, one per line, for the release base. */
+function installLines(base: string): string[] {
+  return [
+    `  macOS and Linux:  curl -fsSL ${base}/install.sh | sh`,
+    `  Windows:          irm ${base}/install.ps1 | iex`,
+    `  npm:              npm i -g ${base}/tunnel-ai.tgz`,
+  ];
+}
+
 function updateByHand(binPath: string, base: string): string {
   return [
     `tunnel can't update itself from ${binPath}: that isn't an install-script or npm install.`,
     'Update it the way you installed it:',
-    `  macOS and Linux:  curl -fsSL ${base}/install.sh | sh`,
-    `  Windows:          irm ${base}/install.ps1 | iex`,
-    `  npm:              npm i -g ${base}/tunnel-ai.tgz`,
+    ...installLines(base),
   ].join('\n');
+}
+
+/**
+ * The error for an update that didn't land. `probe` is the `bin.js --version` run just after it. The installers
+ * delete the old files before moving the new ones in, so "still works" is only said when that run printed the
+ * old version. Otherwise the person gets the commands to reinstall. `exitCode` is the installer's or npm's, or
+ * undefined when it exited 0.
+ */
+function updateFailed(
+  label: string,
+  exitCode: number | undefined,
+  probe: { code: number; stdout: string },
+  base: string,
+): TunnelError {
+  const now = probe.stdout.trim();
+  const runs = probe.code === 0 && now !== '';
+  const state = runs ? `tunnel reports ${now}` : 'tunnel no longer starts';
+  const reinstall = ['Reinstall it:', ...installLines(base)].join('\n');
+  if (exitCode !== undefined) {
+    const failed = `The update failed (${label} exited with ${exitCode})`;
+    if (runs && now === VERSION) return new TunnelError(`${failed}. Your current tunnel ${VERSION} still works.`);
+    return new TunnelError(`${failed}, and ${state}. ${reinstall}`);
+  }
+  if (runs && now === VERSION) {
+    return new TunnelError(
+      `The update failed (${label} finished, but tunnel still reports ${VERSION}). Your current tunnel ${VERSION} still works.`,
+    );
+  }
+  return new TunnelError(`The update failed (${label} finished, but ${state}). ${reinstall}`);
 }

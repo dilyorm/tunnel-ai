@@ -5,7 +5,7 @@ import { hostname, userInfo } from 'node:os';
 import { basename, dirname, extname, resolve } from 'node:path';
 import { formatCode, parseCode, randomSecret } from './codes.js';
 import { b64, deriveInviteKeys, newKey, open, openText, seal, sealText, sha256, unb64 } from './crypto.js';
-import { TunnelError, UsageError } from './errors.js';
+import { CODEX_NETWORK_HINT, TunnelError, UnreachableError, UsageError } from './errors.js';
 import {
   formatSize,
   isForMe,
@@ -448,7 +448,10 @@ export async function listenCmd(ctx: Ctx) {
       if (ctx.signal?.aborted) break;
       if (error instanceof TunnelError && (error as TunnelError & { status?: number }).status === 404) throw error;
       failures++;
-      if (failures === 1) ctx.err(`${(error as Error).message} Retrying…`);
+      if (failures === 1) {
+        const codex = error instanceof UnreachableError && ctx.env.CODEX_SANDBOX_NETWORK_DISABLED === '1';
+        ctx.err(`${(error as Error).message} Retrying…${codex ? `\n${CODEX_NETWORK_HINT}` : ''}`);
+      }
       await sleep(Math.min(30_000, 1000 * 2 ** Math.min(failures, 5)), ctx.signal);
     }
   }

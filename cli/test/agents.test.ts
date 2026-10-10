@@ -53,6 +53,51 @@ describe('relay unreachable', () => {
     assert.equal(r.err, `The relay at ${url} is unreachable. Check your connection, or point to another relay with --relay.\n`);
   });
 
+  test('tunnel listen puts the Codex hint under its first retry message, and only inside Codex', async () => {
+    const r = await relay();
+    let up = true;
+    const home = tmp('agents-listen');
+    const cwd = tmp('agents-listen-cwd');
+    /** Run the CLI as one machine: same ~/.tunnel every time. */
+    async function machine(env: Record<string, string>, argv: string[], signal?: AbortSignal, onErr?: (line: string) => void) {
+      let err = '';
+      const code = await run(argv, {
+        env: { TUNNEL_HOME: home, TUNNEL_RELAY: r.url, ...env },
+        cwd,
+        out: () => {},
+        err: (s) => ((err += s + '\n'), onErr?.(s)),
+        signal,
+      });
+      return { code, err };
+    }
+    /** Listen until the first "Retrying" line, then stop. Returns everything written to stderr. */
+    async function listenUntilRetry(env: Record<string, string>) {
+      const stop = new AbortController();
+      const listening = await machine(env, ['listen'], stop.signal, (line) => {
+        if (line.includes('Retrying')) stop.abort();
+      });
+      return listening.err;
+    }
+    try {
+      const opened = await machine({}, ['open', 'x']);
+      assert.equal(opened.code, 0, opened.err);
+      up = false;
+      await r.close(); // the tunnel is saved; its relay is gone
+
+      const message = `The relay at ${r.url} is unreachable. Check your connection, or point to another relay with --relay. Retrying…`;
+      const plain = await listenUntilRetry({});
+      assert.match(plain, /^Listening on x as /);
+      assert.ok(plain.endsWith(`${message}\n`), plain);
+      assert.ok(!plain.includes(CODEX_NETWORK_HINT));
+
+      const codex = await listenUntilRetry({ CODEX_SANDBOX_NETWORK_DISABLED: '1' });
+      assert.ok(codex.endsWith(`${message}\n${CODEX_NETWORK_HINT}\n`), codex);
+      assert.equal(codex.split(CODEX_NETWORK_HINT).length - 1, 1, 'once');
+    } finally {
+      if (up) await r.close();
+    }
+  });
+
   test('a relay that times out is not called unreachable', async () => {
     const sockets: Socket[] = [];
     const server = createServer((socket) => sockets.push(socket)); // accepts, never answers
