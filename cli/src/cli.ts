@@ -3,6 +3,7 @@ import * as commands from './commands.js';
 import * as accountCommands from './account-commands.js';
 import type { Ctx, Flags, IO } from './commands.js';
 import { TunnelError, UnreachableError } from './errors.js';
+import { skillsCmd } from './skills.js';
 import { Store } from './store.js';
 import { VERSION } from './version.js';
 
@@ -36,8 +37,8 @@ Account
   tunnel upgrade [plus|pro]           Pay for more tunnels, bigger files and longer history
 
 Setup
-  tunnel skills install [--claude] [--codex]   Teach Claude Code and Codex to use tunnel
-  tunnel relay [--port 8787] [--data dir]      Run your own relay
+  tunnel skills install [--agent name] [--all]   Teach your coding agents to use tunnel
+  tunnel relay [--port 8787] [--data dir]        Run your own relay
 
 Options
   -t, --tunnel <name>   Use this tunnel instead of the current one
@@ -71,7 +72,7 @@ const COMMANDS: Record<string, (ctx: Ctx, args: string[]) => Promise<void>> = {
   logout: accountCommands.logoutCmd,
   account: accountCommands.accountCmd,
   upgrade: accountCommands.upgradeCmd,
-  skills: commands.skillsCmd,
+  skills: skillsCmd,
   relay: commands.relayCmd,
 };
 
@@ -97,6 +98,9 @@ export async function run(argv: string[], io: IO): Promise<number> {
         data: { type: 'string' },
         claude: { type: 'boolean' },
         codex: { type: 'boolean' },
+        agent: { type: 'string', multiple: true },
+        all: { type: 'boolean' },
+        refresh: { type: 'boolean' },
         force: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
         version: { type: 'boolean', short: 'v' },

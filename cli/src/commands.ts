@@ -1,9 +1,8 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { homedir, hostname, userInfo } from 'node:os';
-import { basename, dirname, extname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { hostname, userInfo } from 'node:os';
+import { basename, dirname, extname, resolve } from 'node:path';
 import { formatCode, parseCode, randomSecret } from './codes.js';
 import { b64, deriveInviteKeys, newKey, open, openText, seal, sealText, sha256, unb64 } from './crypto.js';
 import { TunnelError, UsageError } from './errors.js';
@@ -57,6 +56,9 @@ export interface Flags {
   data?: string;
   claude?: boolean;
   codex?: boolean;
+  agent?: string[];
+  all?: boolean;
+  refresh?: boolean;
   force?: boolean;
 }
 
@@ -551,23 +553,6 @@ export async function closeCmd(ctx: Ctx) {
   await api(rec).json('DELETE', tunnelPath(rec));
   ctx.store.removeTunnel(rec.name);
   ctx.out(`Closed ${rec.name}. Its messages and files were deleted from the relay.`);
-}
-
-export async function skillsCmd(ctx: Ctx, args: string[]) {
-  if (args[0] !== 'install') throw new UsageError('Usage: tunnel skills install [--claude] [--codex]');
-  const source = fileURLToPath(new URL('../skills/tunnel/SKILL.md', import.meta.url));
-  const skill = readFileSync(source, 'utf8');
-  const both = !ctx.flags.claude && !ctx.flags.codex;
-  const home = ctx.env.TUNNEL_SKILLS_HOME || homedir();
-  const targets: [string, string][] = [];
-  if (both || ctx.flags.claude) targets.push(['Claude Code', join(home, '.claude', 'skills', 'tunnel')]);
-  if (both || ctx.flags.codex) targets.push(['Codex', join(home, '.agents', 'skills', 'tunnel')]);
-  const width = Math.max(...targets.map(([label]) => label.length));
-  for (const [label, dir] of targets) {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'SKILL.md'), skill);
-    ctx.out(`Installed for ${label.padEnd(width)}  ${dir}`);
-  }
 }
 
 export async function relayCmd(ctx: Ctx) {

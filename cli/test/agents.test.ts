@@ -1,9 +1,10 @@
 import { test, describe, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer, type Socket } from 'node:net';
 import type { AddressInfo } from 'node:net';
+import { join } from 'node:path';
 import { CODEX_NETWORK_HINT, HELP, run } from '../src/cli.js';
 import { agentKind, WAIT_DEFAULT_S } from '../src/commands.js';
 import { secretToken } from '../src/crypto.js';
@@ -183,5 +184,159 @@ describe('skill text', () => {
     assert.match(skill, /Run `tunnel update` only when they ask/);
     assert.match(skill, /network_access/);
     assert.doesNotMatch(skill, /--timeout 300/);
+  });
+});
+
+const SKILL = readFileSync(new URL('../skills/tunnel/SKILL.md', import.meta.url), 'utf8');
+const skillFile = (home: string, ...folder: string[]) => join(home, ...folder, 'tunnel', 'SKILL.md');
+
+/** `tunnel skills install …` against a fake home folder. */
+function install(home: string, args: string[] = [], env: Record<string, string> = {}) {
+  return cli({ TUNNEL_SKILLS_HOME: home, ...env }, 'skills', 'install', ...args);
+}
+
+describe('skills install', () => {
+  test('with no agent found, writes only the shared folder', async () => {
+    const home = tmp('skills-empty');
+    const r = await install(home);
+    assert.equal(r.code, 0, r.err);
+    assert.equal(readFileSync(skillFile(home, '.agents', 'skills'), 'utf8'), SKILL);
+    assert.equal(existsSync(join(home, '.claude')), false);
+    assert.equal(r.out, 'Installed the tunnel skill:\n  ~/.agents/skills/tunnel   agents that read ~/.agents/skills\n');
+  });
+
+  test('writes the folders of the agents it finds and names them', async () => {
+    const home = tmp('skills-found');
+    for (const marker of ['.claude', '.kiro', join('.config', 'opencode')]) mkdirSync(join(home, marker), { recursive: true });
+    const r = await install(home);
+    assert.equal(r.code, 0, r.err);
+    for (const folder of [['.agents', 'skills'], ['.claude', 'skills'], ['.kiro', 'skills']]) {
+      assert.equal(readFileSync(skillFile(home, ...folder), 'utf8'), SKILL);
+    }
+    assert.equal(existsSync(join(home, '.continue')), false);
+    assert.equal(
+      r.out,
+      'Installed the tunnel skill:\n' +
+        '  ~/.agents/skills/tunnel   OpenCode, and other agents that read ~/.agents/skills\n' +
+        '  ~/.claude/skills/tunnel   Claude Code\n' +
+        '  ~/.kiro/skills/tunnel     Kiro\n',
+    );
+  });
+
+  test('--agent writes exactly the folders those agents read', async () => {
+    const home = tmp('skills-named');
+    const r = await install(home, ['--agent', 'claude']);
+    assert.equal(r.code, 0, r.err);
+    assert.ok(existsSync(skillFile(home, '.claude', 'skills')));
+    assert.equal(existsSync(join(home, '.agents')), false);
+    assert.equal(r.out, 'Installed the tunnel skill:\n  ~/.claude/skills/tunnel   Claude Code\n');
+
+    const both = await install(tmp('skills-named2'), ['--agent', 'kiro,codex']);
+    assert.equal(
+      both.out,
+      'Installed the tunnel skill:\n  ~/.agents/skills/tunnel   Codex\n  ~/.kiro/skills/tunnel     Kiro\n',
+    );
+  });
+
+  test('--claude and --codex still work, as --agent claude and --agent codex', async () => {
+    const home = tmp('skills-alias');
+    const r = await install(home, ['--codex']);
+    assert.equal(r.code, 0, r.err);
+    assert.ok(existsSync(skillFile(home, '.agents', 'skills')));
+    assert.equal(existsSync(join(home, '.claude')), false);
+    const c = await install(home, ['--claude']);
+    assert.equal(c.code, 0, c.err);
+    assert.ok(existsSync(skillFile(home, '.claude', 'skills')));
+  });
+
+  test('an unknown agent is a usage error that lists the names', async () => {
+    const r = await install(tmp('skills-unknown'), ['--agent', 'nope']);
+    assert.equal(r.code, 2);
+    assert.match(r.err, /^Unknown agent "nope"\. Known agents: claude, codex, cursor, gemini, opencode, copilot,/);
+  });
+
+  test('--all writes every folder, and COPILOT_HOME adds its own', async () => {
+    const home = tmp('skills-all');
+    const copilotHome = join(home, 'copilot-home');
+    const r = await install(home, ['--all'], { COPILOT_HOME: copilotHome });
+    assert.equal(r.code, 0, r.err);
+    for (const folder of [
+      ['.agents', 'skills'],
+      ['.claude', 'skills'],
+      ['copilot-home', 'skills'],
+      ['.kiro', 'skills'],
+      ['.gemini', 'antigravity-cli', 'skills'],
+      ['.continue', 'skills'],
+      ['.hermes', 'skills'],
+      ['.letta', 'skills'],
+    ]) {
+      assert.ok(existsSync(skillFile(home, ...folder)), folder.join('/'));
+    }
+  });
+
+  test('--agent copilot with COPILOT_HOME writes the shared folder and COPILOT_HOME/skills', async () => {
+    const home = tmp('skills-copilot');
+    const r = await install(home, ['--agent', 'copilot'], { COPILOT_HOME: join(home, 'ch') });
+    assert.equal(r.code, 0, r.err);
+    assert.ok(existsSync(skillFile(home, '.agents', 'skills')));
+    assert.ok(existsSync(skillFile(home, 'ch', 'skills')));
+  });
+
+  test('flags that pick targets are one at a time', async () => {
+    const r = await install(tmp('skills-mixed'), ['--all', '--agent', 'claude']);
+    assert.equal(r.code, 2);
+    assert.match(r.err, /one of --agent, --all and --refresh/);
+  });
+
+  test('--refresh rewrites only tunnel skills that are already there', async () => {
+    const home = tmp('skills-refresh');
+    const put = (text: string, ...folder: string[]) => {
+      mkdirSync(join(home, ...folder, 'tunnel'), { recursive: true });
+      writeFileSync(skillFile(home, ...folder), text);
+    };
+    put('---\nname: tunnel\ndescription: old\n---\nold\n', '.claude', 'skills');
+    put('---\r\nname: tunnel\r\ndescription: old\r\n---\r\nold\r\n', '.kiro', 'skills');
+    const unrelated = '---\nname: other\ndescription: not ours\n---\n';
+    put(unrelated, '.continue', 'skills');
+    const r = await install(home, ['--refresh']);
+    assert.equal(r.code, 0, r.err);
+    assert.equal(readFileSync(skillFile(home, '.claude', 'skills'), 'utf8'), SKILL);
+    assert.equal(readFileSync(skillFile(home, '.kiro', 'skills'), 'utf8'), SKILL);
+    assert.equal(readFileSync(skillFile(home, '.continue', 'skills'), 'utf8'), unrelated);
+    assert.equal(existsSync(join(home, '.agents')), false);
+    assert.equal(
+      r.out,
+      'Refreshed the tunnel skill:\n  ~/.claude/skills/tunnel   Claude Code\n  ~/.kiro/skills/tunnel     Kiro\n',
+    );
+  });
+
+  test('--refresh with nothing installed says so and creates nothing', async () => {
+    const home = tmp('skills-refresh-none');
+    const r = await install(home, ['--refresh']);
+    assert.equal(r.code, 0, r.err);
+    assert.equal(r.out, 'No installed tunnel skills to refresh.\n');
+    assert.equal(existsSync(join(home, '.agents')), false);
+  });
+
+  test('--json lists each folder written with the agents it names', async () => {
+    const home = tmp('skills-json');
+    mkdirSync(join(home, '.claude'));
+    const r = await install(home, ['--json']);
+    assert.equal(r.code, 0, r.err);
+    assert.deepEqual(JSON.parse(r.out), {
+      installed: [
+        { dir: join(home, '.agents', 'skills', 'tunnel'), agents: [] },
+        { dir: join(home, '.claude', 'skills', 'tunnel'), agents: ['Claude Code'] },
+      ],
+    });
+  });
+
+  test('a marker that is a file gives a readable error, not a crash', async () => {
+    const home = tmp('skills-file');
+    writeFileSync(join(home, '.claude'), 'not a folder');
+    const r = await install(home);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /^Couldn't write .*SKILL\.md: /);
+    assert.ok(existsSync(skillFile(home, '.agents', 'skills')));
   });
 });

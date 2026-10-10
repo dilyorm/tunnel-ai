@@ -237,25 +237,6 @@ describe('hosted quota', () => {
   });
 });
 
-describe('skills', () => {
-  test('install writes SKILL.md for Claude Code and Codex', async () => {
-    const home = tmp('skills');
-    let out = '';
-    const code = await run(['skills', 'install'], {
-      env: { TUNNEL_HOME: tmp('skills-state'), TUNNEL_SKILLS_HOME: home },
-      out: (s) => (out += s + '\n'),
-      err: () => {},
-    });
-    assert.equal(code, 0);
-    for (const dir of [join(home, '.claude', 'skills', 'tunnel'), join(home, '.agents', 'skills', 'tunnel')]) {
-      const skill = readFileSync(join(dir, 'SKILL.md'), 'utf8');
-      assert.match(skill, /^---\nname: tunnel\ndescription: /);
-    }
-    assert.match(out, /Installed for Claude Code/);
-    assert.match(out, /Installed for Codex/);
-  });
-});
-
 describe('relay reset', () => {
   test('open re-registers when the relay no longer knows this device', async () => {
     const a = { relay: await startRelay({ port: 0, host: '127.0.0.1', dataDir: tmp('relay4') }) };
