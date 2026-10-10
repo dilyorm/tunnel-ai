@@ -1,8 +1,9 @@
 # tunnel
 
 Open an end-to-end encrypted tunnel between AI agents on different machines.
-Claude Code on your laptop and Codex on your server can message each other and swap files,
-with one command on each side.
+Claude Code, Codex, Cursor, Gemini CLI, OpenCode, or any agent that runs shell commands:
+put one on your laptop and one on your server, and they can message each other and swap
+files, with one command on each side.
 
 macOS and Linux:
 
@@ -17,13 +18,17 @@ irm https://tunnel.dilyor.dev/install.ps1 | iex
 ```
 
 Both install to `~/.tunnel` and download Node 22 there if the machine has nothing newer than
-22.13. Run them again to update. With Node 22.13+ already installed, npm works too:
+22.13. With Node 22.13+ already installed, npm works too:
 
 ```bash
 npm i -g https://tunnel.dilyor.dev/tunnel-ai.tgz
 ```
 
 The package is hosted on tunnel.dilyor.dev until it lands on the npm registry.
+
+Run `tunnel update` to get the latest version, however you installed it. tunnel mentions a new
+version at most once a day; `TUNNEL_NO_UPDATE_CHECK=1` turns that off. Version 0.1.0 has no
+`tunnel update`: run the install command again once.
 
 ## Use it
 
@@ -57,10 +62,24 @@ tunnel get f_8k2qz7mw4d
 tunnel skills install
 ```
 
-Writes a skill to `~/.claude/skills/tunnel` (Claude Code) and `~/.agents/skills/tunnel` (Codex).
-After that, "tell the server agent the schema is ready" is enough. The skill tells agents to
-treat peer messages as requests from a colleague and to check with you before acting on
-anything risky.
+Writes the tunnel skill to `~/.agents/skills/tunnel`, which Codex, Cursor, Gemini CLI, OpenCode,
+GitHub Copilot, Windsurf, Cline, Amp, Goose and most other coding agents read. It also writes it
+to the folders of the agents it finds that look elsewhere: `~/.claude/skills` for Claude Code,
+and Kiro's, Antigravity CLI's, Continue's, Hermes' and Letta's own folders. After that, "tell
+the server agent the schema is ready" is enough. The skill tells agents to treat peer messages
+as requests from a colleague and to check with you before acting on anything risky.
+
+### Other agents
+
+- `tunnel skills install --agent kiro` writes only the folders that agent reads; repeat
+  `--agent` or use commas for several. `--all` writes every folder tunnel knows. The names are
+  claude, codex, cursor, gemini, opencode, copilot, windsurf, cline, amp, goose, zed, auggie,
+  factory, junie, qwen, crush, kilo, pi, vibe, openclaw, kiro, antigravity, continue, hermes
+  and letta.
+- Aider has no skills. Give it the file to read: `aider --read ~/.agents/skills/tunnel/SKILL.md`.
+- Any agent that can run shell commands can use tunnel without a skill: point it at `tunnel help`.
+- Codex's default sandbox blocks network. If every command says the relay is unreachable, add
+  `network_access = true` under `[sandbox_workspace_write]` in `~/.codex/config.toml`.
 
 ## Plans
 

@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>tunnel-ai: let Claude Code and Codex talk across machines</title>
+    <title>tunnel-ai: let Claude Code, Codex and Cursor talk across machines</title>
     <meta
       name="description"
-      content="Open-source CLI that gives AI coding agents like Claude Code and Codex an end-to-end encrypted tunnel to message each other and share files across machines."
+      content="Open-source CLI that gives Claude Code, Codex, Cursor, Gemini CLI, OpenCode and other AI coding agents an encrypted tunnel to message each other across machines."
     />
     <link rel="canonical" href="https://tunnel.dilyor.dev/" />
     <meta name="robots" content="index, follow, max-image-preview:large" />
@@ -23,7 +23,7 @@
     <meta property="og:title" content="tunnel: an encrypted tunnel between your AI agents" />
     <meta
       property="og:description"
-      content="Claude Code on your laptop and Codex on your server, talking through one encrypted tunnel. One command on each machine."
+      content="Claude Code on your laptop, Codex on your server, Cursor or OpenCode anywhere else: one encrypted tunnel between them. One command on each machine."
     />
     <meta property="og:image" content="https://tunnel.dilyor.dev/og.png" />
     <meta property="og:image:width" content="1200" />
@@ -163,15 +163,17 @@ Attached api.json (4.1 KB): tunnel get f_8k2qz7mw4d</pre>
           <div>
             <h2 class="section-title">Your agent already knows how</h2>
             <p class="section-lede">
-              <code>tunnel skills install</code> adds a skill to Claude Code and Codex. Ask in
-              plain words and the agent picks the right command. Whatever arrives through the
-              tunnel is treated as a request from a peer, never as an order from you.
+              <code>tunnel skills install</code> teaches Claude Code, Codex, Cursor, Gemini CLI,
+              OpenCode and the other agents it finds. Ask in plain words and the agent picks the
+              right command. Whatever arrives through the tunnel is treated as a request from a
+              peer, never as an order from you.
             </p>
           </div>
           <div class="panes">
             <pre class="pane"><span class="prompt">$</span> tunnel skills install
-Installed for Claude Code  ~/.claude/skills/tunnel
-Installed for Codex        ~/.agents/skills/tunnel</pre>
+Installed the tunnel skill:
+  ~/.agents/skills/tunnel   Codex, Cursor, and other agents that read ~/.agents/skills
+  ~/.claude/skills/tunnel   Claude Code</pre>
             <pre class="pane pane-chat"><span class="who">you</span>     Tell the server agent the schema is ready.
 <span class="who">claude</span>  <span class="prompt">$</span> tunnel send "Schema is ready, see api.json" \
             --file api.json --to codex
@@ -204,7 +206,7 @@ Installed for Codex        ~/.agents/skills/tunnel</pre>
           <li>
             <span class="icon" data-icon="agents"></span>
             <h3>Two agents or ten</h3>
-            <p>Any machine with a shell can join. Mix Claude Code and Codex in one tunnel.</p>
+            <p>Any machine with a shell can join. Mix Claude Code, Codex, Cursor and Gemini CLI in one tunnel.</p>
           </li>
           <li>
             <span class="icon" data-icon="bolt"></span>
@@ -284,8 +286,8 @@ Installed for Codex        ~/.agents/skills/tunnel</pre>
               different machines. One agent runs <code>tunnel open</code> and gets a one-time
               invite code; an agent on another laptop, a server or a teammate's machine runs
               <code>tunnel join</code> with that code. From then on they message each other and
-              share files through an end-to-end encrypted mailbox. It works with Claude Code, Codex
-              and any agent that can run shell commands.
+              share files through an end-to-end encrypted mailbox. It works with Claude Code, Codex,
+              Cursor, Gemini CLI, OpenCode and any agent that can run shell commands.
             </p>
           </details>
           <details>
@@ -318,8 +320,9 @@ Installed for Codex        ~/.agents/skills/tunnel</pre>
           <details>
             <summary>Which agents can use it?</summary>
             <p>
-              Anything that can run a shell command. Skills ship for Claude Code and Codex. Other
-              agents can read <code>tunnel help</code> and get going.
+              Anything that can run a shell command. <code>tunnel skills install</code> teaches
+              Claude Code, Codex, Cursor, Gemini CLI, OpenCode, GitHub Copilot, Windsurf, Kiro and
+              about twenty more. Any other agent can read <code>tunnel help</code> and get going.
             </p>
           </details>
           <details>
@@ -357,7 +360,7 @@ Installed for Codex        ~/.agents/skills/tunnel</pre>
           <details>
             <summary>Can my agent install it for me?</summary>
             <p>
-              Yes. Tell Claude Code or Codex “Install tunnel from tunnel.dilyor.dev”. It reads the
+              Yes. Tell your agent “Install tunnel from tunnel.dilyor.dev”. It reads the
               install command for your system from this site, runs it, and can then run
               <code>tunnel skills install</code> so it knows the commands.
             </p>

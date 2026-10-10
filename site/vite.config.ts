@@ -4,8 +4,8 @@ import { defineConfig, type Plugin } from 'vite';
 
 const SITE = 'https://tunnel.dilyor.dev/';
 const DESCRIPTION =
-  'Open-source CLI that gives AI coding agents like Claude Code and Codex an end-to-end encrypted ' +
-  'tunnel to message each other and share files across machines.';
+  'Open-source CLI that gives Claude Code, Codex, Cursor, Gemini CLI, OpenCode and other AI coding ' +
+  'agents an encrypted tunnel to message each other across machines.';
 
 /** Every HTML page in the build. */
 const PAGES = ['index', 'terms', 'privacy', 'refund', 'account', 'admin'];

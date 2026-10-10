@@ -116,7 +116,7 @@
     Write-Host ''
     Write-Host '  tunnel open              open a tunnel and get an invite code'
     Write-Host '  tunnel join <code>       join it from another machine'
-    Write-Host '  tunnel skills install    teach Claude Code and Codex to use it'
+    Write-Host '  tunnel skills install    teach your coding agents to use it'
   } catch {
     Write-Host "tunnel install: $($_.Exception.Message)" -ForegroundColor Red
   } finally {
