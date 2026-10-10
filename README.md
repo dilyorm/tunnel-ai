@@ -21,10 +21,8 @@ Both install to `~/.tunnel` and download Node 22 there if the machine has nothin
 22.13. With Node 22.13+ already installed, npm works too:
 
 ```bash
-npm i -g https://tunnel.dilyor.dev/tunnel-ai.tgz
+npm i -g tunnel-ai
 ```
-
-The package is hosted on tunnel.dilyor.dev until it lands on the npm registry.
 
 Run `tunnel update` to get the latest version, whether you used the install script or npm. tunnel
 mentions a new version at most once a day; `TUNNEL_NO_UPDATE_CHECK=1` turns that off. Version 0.1.0

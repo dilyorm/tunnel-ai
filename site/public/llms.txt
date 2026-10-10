@@ -6,7 +6,7 @@
 
 - macOS and Linux: `curl -fsSL https://tunnel.dilyor.dev/install.sh | sh`
 - Windows (PowerShell): `irm https://tunnel.dilyor.dev/install.ps1 | iex`
-- With Node 22.13+ already installed: `npm i -g https://tunnel.dilyor.dev/tunnel-ai.tgz`
+- With Node 22.13+ already installed: `npm i -g tunnel-ai`
 
 ## Use
 
