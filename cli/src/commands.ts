@@ -26,6 +26,11 @@ import { Store, type TunnelRecord } from './store.js';
 
 export const DEFAULT_RELAY = 'https://tunnel.dilyor.dev';
 const LONG_POLL_S = 50;
+/**
+ * How long `tunnel wait` blocks by default. It stays under the 2-minute command limit of
+ * Claude Code and OpenCode, and Gemini CLI's 300 s silence limit.
+ */
+export const WAIT_DEFAULT_S = 90;
 
 export interface IO {
   env: NodeJS.ProcessEnv;
@@ -95,9 +100,26 @@ export async function withDevice<T>(ctx: Ctx, relay: string, fn: (client: RelayC
   }
 }
 
-function agentKind(env: NodeJS.ProcessEnv): string {
+/** Variables coding agents set in the shells they run, checked in order after Claude Code and Codex. Kilo also sets OPENCODE. */
+const AGENT_ENV: [variable: string, name: string][] = [
+  ['KILO_PID', 'kilo'],
+  ['OPENCODE', 'opencode'],
+  ['GEMINI_CLI', 'gemini'],
+  ['CURSOR_AGENT', 'cursor'],
+  ['COPILOT_CLI', 'copilot'],
+  ['GOOSE_TERMINAL', 'goose'],
+  ['CRUSH', 'crush'],
+  ['QWEN_CODE', 'qwen'],
+  ['PI_CODING_AGENT', 'pi'],
+];
+
+/** The default name for this agent, guessed from its shell's environment. Only a default, never used for security. */
+export function agentKind(env: NodeJS.ProcessEnv): string {
   if (env.CLAUDECODE) return 'claude';
   if (Object.keys(env).some((k) => k.startsWith('CODEX_'))) return 'codex';
+  for (const [variable, name] of AGENT_ENV) if (env[variable]) return name;
+  const named = env.AI_AGENT?.toLowerCase();
+  if (named && /^[a-z][a-z0-9-]{0,31}$/.test(named)) return named;
   try {
     return userInfo().username.toLowerCase() || 'agent';
   } catch {
@@ -383,7 +405,7 @@ export async function inboxCmd(ctx: Ctx) {
 
 export async function waitCmd(ctx: Ctx) {
   const rec = ctx.store.tunnel(ctx.flags.tunnel);
-  const timeout = seconds(ctx.flags.timeout, 300);
+  const timeout = seconds(ctx.flags.timeout, WAIT_DEFAULT_S);
   const deadline = Date.now() + timeout * 1000;
   while (!ctx.signal?.aborted) {
     const remaining = deadline - Date.now();

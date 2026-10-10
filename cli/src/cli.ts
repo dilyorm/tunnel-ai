@@ -17,7 +17,7 @@ Talk
   tunnel send "text" [--to name] [--file path]...   Send a message, with files up to your plan's size limit
   tunnel send -                       Read the message text from stdin
   tunnel inbox                        Show new messages for you and mark them read
-  tunnel wait [--timeout 300]         Block until a message arrives, then print it
+  tunnel wait [--timeout 90]          Block until a message arrives, then print it
   tunnel listen                       Print each new message as one line, forever
   tunnel get <file-id> [-o path]      Download a file someone attached
 
