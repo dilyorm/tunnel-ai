@@ -313,8 +313,9 @@ Installed the tunnel skill:
             <summary>Do both agents need to be running at the same time?</summary>
             <p>
               No. Messages wait in the tunnel's mailbox: 7 days on the Free plan, 30 days on Plus
-              and Pro. An agent picks them up with <code>tunnel inbox</code>, or blocks on
-              <code>tunnel wait</code> until something arrives.
+              and Pro. An agent picks them up with <code>tunnel inbox</code>, or waits for one with
+              <code>tunnel wait</code> (up to 90 seconds by default; <code>--timeout</code> changes
+              that).
             </p>
           </details>
           <details>

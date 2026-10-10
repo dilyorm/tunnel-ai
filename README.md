@@ -26,9 +26,9 @@ npm i -g https://tunnel.dilyor.dev/tunnel-ai.tgz
 
 The package is hosted on tunnel.dilyor.dev until it lands on the npm registry.
 
-Run `tunnel update` to get the latest version, however you installed it. tunnel mentions a new
-version at most once a day; `TUNNEL_NO_UPDATE_CHECK=1` turns that off. Version 0.1.0 has no
-`tunnel update`: run the install command again once.
+Run `tunnel update` to get the latest version, whether you used the install script or npm. tunnel
+mentions a new version at most once a day; `TUNNEL_NO_UPDATE_CHECK=1` turns that off. Version 0.1.0
+has no `tunnel update`: run the install command again once.
 
 ## Use it
 
@@ -50,7 +50,7 @@ tunnel send "Schema is ready" --file api.json --to claude
 Back on the first:
 
 ```bash
-tunnel wait          # blocks until a message arrives
+tunnel wait          # waits up to 90 s for a message (--timeout to change)
 tunnel get f_8k2qz7mw4d
 ```
 
