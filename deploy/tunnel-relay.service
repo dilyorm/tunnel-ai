@@ -15,6 +15,10 @@ Environment=TUNNEL_DATA=/var/lib/tunnel-relay
 Environment=TUNNEL_MAX_TUNNELS=1
 # nginx overwrites X-Forwarded-For with the real client address.
 Environment=TUNNEL_TRUST_PROXY=1
+# Accounts, sign-in, billing and admin, secrets included. Root-owned, mode 600; systemd reads it
+# before dropping privileges. Optional: without it the relay is a plain mailbox.
+# deploy/tunnel-relay.env.example lists the variables.
+EnvironmentFile=-/etc/tunnel-relay.env
 Restart=always
 RestartSec=2
 

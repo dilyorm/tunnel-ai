@@ -286,6 +286,28 @@ pre {
   color: var(--stone);
 }
 
+.agent-hint {
+  margin-top: 8px;
+  font-size: 0.9375rem;
+  color: var(--stone);
+}
+
+.agent-hint q {
+  color: var(--ink);
+}
+
+.btn-text {
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--signal);
+  font: 500 0.9375rem var(--sans);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
 /* ---------- band (wormhole) ---------- */
 
 .band {
@@ -614,6 +636,25 @@ pre {
   background: var(--signal);
 }
 
+.plan .btn {
+  margin-top: 24px;
+}
+
+/* Not for sale yet: the markup's default, until the relay says it has billing. 6.2:1 on --rule. */
+.btn[aria-disabled='true'],
+.btn[aria-disabled='true']:hover {
+  background: var(--rule);
+  color: #5c534d;
+  cursor: default;
+}
+
+.plans-note {
+  margin-top: 24px;
+  max-width: var(--measure);
+  color: var(--stone);
+  font-size: 0.9375rem;
+}
+
 /* ---------- faq ---------- */
 
 .faq {
@@ -689,7 +730,8 @@ pre {
 
 .footer-links {
   display: flex;
-  gap: 24px;
+  flex-wrap: wrap;
+  gap: 12px 24px;
   font-size: 0.9375rem;
 }
 

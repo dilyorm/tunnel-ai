@@ -12,7 +12,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 what="${1:-all}"
 
 if [[ "$what" == all || "$what" == site ]]; then
-  (cd "$ROOT/site" && npm run build)
+  (cd "$ROOT/site" && npm run build && npm run check)
   # The CLI package rides along, so `npm i -g https://tunnel.dilyor.dev/tunnel-ai.tgz` works
   # without the npm registry. tunnel-ai.tgz is the latest; the versioned file stays pinned.
   (cd "$ROOT/cli" && npm run build >/dev/null && npm pack --silent --pack-destination ../site/dist >/dev/null)

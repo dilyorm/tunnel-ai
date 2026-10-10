@@ -1,0 +1,351 @@
+/* The account, admin and legal pages. Loaded after style.css; reuses its tokens. */
+
+[hidden] {
+  display: none !important;
+}
+
+/* The footer's own top margin spaces the end of the page. */
+.page {
+  padding-top: clamp(32px, 6vw, 72px);
+}
+
+.page-title {
+  font: 400 clamp(2.25rem, 5vw, 3.5rem) / 1 var(--pixel);
+  letter-spacing: -0.01em;
+}
+
+.page-lede {
+  margin-top: 16px;
+  max-width: var(--measure);
+  color: var(--stone);
+}
+
+.page-lede code {
+  color: var(--ink);
+}
+
+.page-subtitle {
+  margin-top: 56px;
+  font: 600 1.25rem/1.2 var(--sans);
+  letter-spacing: -0.02em;
+}
+
+.status {
+  margin-top: 24px;
+  max-width: var(--measure);
+  padding: 12px 16px;
+  background: var(--haze);
+  border-left: 3px solid var(--signal);
+}
+
+.status[data-tone='error'] {
+  background: var(--paper);
+  border: 1px solid var(--signal);
+  border-left-width: 3px;
+}
+
+/* ---------- legal pages ---------- */
+
+.legal {
+  max-width: var(--measure);
+}
+
+.legal .updated {
+  margin-top: 12px;
+  color: var(--stone);
+  font-size: 0.9375rem;
+}
+
+.legal h2 {
+  margin-top: 40px;
+  font: 600 1.25rem/1.25 var(--sans);
+  letter-spacing: -0.02em;
+}
+
+.legal p,
+.legal ul {
+  margin-top: 12px;
+}
+
+.legal ul {
+  padding-left: 1.25em;
+}
+
+.legal li + li {
+  margin-top: 6px;
+}
+
+/* ---------- buttons, cards and tables ---------- */
+
+button.btn {
+  border: 0;
+  font-family: var(--sans);
+  cursor: pointer;
+}
+
+button.btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.btn-quiet {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.btn-quiet:hover {
+  background: var(--haze);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.actions .btn,
+.sign-in .btn,
+.field-row .btn,
+.table .btn {
+  margin-top: 0;
+}
+
+.card {
+  margin-top: 32px;
+  max-width: var(--measure);
+  padding: 24px;
+  background: var(--haze);
+  clip-path: var(--pixel-corners);
+}
+
+.card h2 {
+  font: 600 1.25rem/1.2 var(--sans);
+}
+
+.card p {
+  margin-top: 12px;
+}
+
+.code {
+  font: 400 2rem/1.2 var(--pixel);
+  letter-spacing: 0.06em;
+}
+
+/* ---------- account ---------- */
+
+.sign-in {
+  margin-top: 32px;
+  display: grid;
+  justify-items: start;
+  gap: 28px;
+}
+
+.email-form {
+  width: 100%;
+  max-width: 32rem;
+}
+
+.email-form label {
+  font-size: 0.9375rem;
+  color: var(--stone);
+}
+
+.field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.field-row input,
+.search input {
+  flex: 1 1 14rem;
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 1rem var(--sans);
+}
+
+.facts {
+  margin: 32px 0 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 10px 32px;
+  max-width: var(--measure);
+}
+
+.facts div {
+  display: contents;
+}
+
+.facts dt {
+  color: var(--stone);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.table-wrap {
+  margin-top: 16px;
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--stone);
+  border-bottom: 1px solid var(--ink);
+  padding: 8px 16px 8px 0;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 10px 16px 10px 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: middle;
+}
+
+.table .btn {
+  padding: 8px 14px;
+}
+
+/* ---------- admin ---------- */
+
+/* A row's label reads like its cells, not like a column heading. */
+.table tbody th {
+  padding: 10px 16px 10px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.numbers {
+  margin: 16px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 20px 24px;
+}
+
+/* A figure with words in it ("$45 a month") gets its own row instead of wrapping. */
+.numbers .wide {
+  grid-column: 1 / -1;
+}
+
+.numbers dt {
+  color: var(--stone);
+  font-size: 0.875rem;
+}
+
+.numbers dd {
+  margin: 4px 0 0;
+  font: 400 2rem/1.1 var(--pixel);
+}
+
+.charts {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 40px 48px;
+}
+
+.chart {
+  margin: 0;
+}
+
+.chart figcaption {
+  font-weight: 500;
+}
+
+.chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 8px;
+  overflow: visible;
+}
+
+.chart-grid {
+  stroke: var(--rule);
+}
+
+.chart-axis {
+  stroke: var(--ink);
+}
+
+.chart-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-label {
+  fill: var(--stone);
+  font: 400 11px var(--sans);
+}
+
+.chart-legend {
+  list-style: none;
+  margin-top: 8px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  font-size: 0.875rem;
+  color: var(--stone);
+}
+
+.chart-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+
+.search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  max-width: 32rem;
+}
+
+.search .btn {
+  margin-top: 0;
+}
+
+#more {
+  margin-top: 16px;
+}
+
+.grant {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.grant select,
+.grant input {
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 0.875rem var(--sans);
+}
+
+.muted {
+  color: var(--stone);
+  font-size: 0.875rem;
+}

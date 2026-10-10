@@ -19,7 +19,7 @@ Hosted tiers: 1 tunnel free; 5 tunnels free for one month (trial); pay-as-you-go
 |---|---|---|
 | A | Core: protocol + relay + CLI + skills (OSS) | built in `cli/`, 18 tests |
 | B | Landing site | built in `site/` |
-| C | Hosted billing: accounts, quotas, trial, payments | own spec later |
+| C | Hosted accounts, billing, stats, admin | spec: `2026-10-09-accounts-billing-stats-design.md` |
 
 ## Decisions
 

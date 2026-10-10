@@ -1,3 +1,5 @@
 # Shell scripts and server config run on Linux; keep LF even on Windows checkouts.
 *.sh text eol=lf
 deploy/* text eol=lf
+# The agent skill ships to Linux and macOS and a test matches its front matter with LF; keep LF here too.
+cli/skills/** text eol=lf

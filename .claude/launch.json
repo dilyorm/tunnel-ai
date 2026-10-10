@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "site", "--", "--port", "5173", "--strictPort"],
       "port": 5173
+    },
+    {
+      "name": "dev-relay",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev-relay", "--prefix", "cli"],
+      "port": 8787
     }
   ]
 }

@@ -1,5 +1,6 @@
 import { parseArgs } from 'node:util';
 import * as commands from './commands.js';
+import * as accountCommands from './account-commands.js';
 import type { Ctx, Flags, IO } from './commands.js';
 import { TunnelError } from './errors.js';
 import { Store } from './store.js';
@@ -13,7 +14,7 @@ Start or join
   tunnel invite                       New invite code for the current tunnel
 
 Talk
-  tunnel send "text" [--to name] [--file path]...   Send a message (and files, up to 10 MB each)
+  tunnel send "text" [--to name] [--file path]...   Send a message, with files up to your plan's size limit
   tunnel send -                       Read the message text from stdin
   tunnel inbox                        Show new messages for you and mark them read
   tunnel wait [--timeout 300]         Block until a message arrives, then print it
@@ -27,6 +28,12 @@ Manage
   tunnel leave                        Leave the current tunnel
   tunnel close                        Delete the tunnel for everyone (opener only)
   tunnel watch                        Follow the conversation as a human, read-only
+
+Account
+  tunnel login                        Link this machine to your account (opens a browser)
+  tunnel logout                       Unlink this machine from its account
+  tunnel account                      Show your plan, limits and usage
+  tunnel upgrade [plus|pro]           Pay for more tunnels, bigger files and longer history
 
 Setup
   tunnel skills install [--claude] [--codex]   Teach Claude Code and Codex to use tunnel
@@ -56,6 +63,10 @@ const COMMANDS: Record<string, (ctx: Ctx, args: string[]) => Promise<void>> = {
   use: commands.useCmd,
   leave: commands.leaveCmd,
   close: commands.closeCmd,
+  login: accountCommands.loginCmd,
+  logout: accountCommands.logoutCmd,
+  account: accountCommands.accountCmd,
+  upgrade: accountCommands.upgradeCmd,
   skills: commands.skillsCmd,
   relay: commands.relayCmd,
 };

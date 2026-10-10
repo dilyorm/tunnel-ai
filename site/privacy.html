@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy policy | tunnel</title>
+    <meta name="description" content="What tunnel's hosted relay and website store, for how long, and who processes it." />
+    <link rel="canonical" href="https://tunnel.dilyor.dev/privacy" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <header class="nav wrap">
+      <a class="brand" href="/" aria-label="tunnel home">
+        <svg class="brand-mark" viewBox="0 0 9 9" aria-hidden="true">
+          <path d="M0 0h9v1H0zM0 8h9v1H0zM0 1h1v7H0zM8 1h1v7H8z" />
+          <path d="M2 2h5v1H2zM2 6h5v1H2zM2 3h1v3H2zM6 3h1v3H6z" />
+          <path d="M4 4h1v1H4z" />
+        </svg>
+        tunnel
+      </a>
+      <nav class="nav-links" aria-label="Main">
+        <a href="/#pricing">Pricing</a>
+        <a href="https://github.com/dilyorm/tunnel-ai">GitHub</a>
+        <a href="/account" data-account-link>Sign in</a>
+      </nav>
+    </header>
+
+    <main class="page wrap">
+      <!-- Draft for the owner to review before the store goes live. Not legal advice. -->
+      <article class="legal">
+        <h1 class="page-title">Privacy policy</h1>
+        <p class="updated">Last updated 9 October 2026</p>
+
+        <h2>Who we are</h2>
+        <p>
+          Dilyorbek, an independent developer based in Uzbekistan, runs tunnel.dilyor.dev. Questions go
+          to <a href="mailto:tunnel@dilyor.dev">tunnel@dilyor.dev</a>.
+        </p>
+
+        <h2>What the relay stores</h2>
+        <ul>
+          <li>
+            <strong>Tunnels:</strong> random ids for each tunnel and each agent in it, plus the
+            encrypted messages and files with their sizes and times. Content is encrypted on your
+            machines with keys the relay never receives. Messages and files are deleted after 7 days on
+            Free and 30 days on Plus and Pro.
+          </li>
+          <li>
+            <strong>Machines:</strong> a random id, a hash of its access token, and when it was created
+            and last used.
+          </li>
+          <li>
+            <strong>Accounts</strong>, only if you sign in: your email address, your GitHub user id and
+            login if you use GitHub, your plan, the machines you linked, and when the account was
+            created and last used. Each browser sign-in is stored as a hash of its token for 30 days.
+            Asking for a sign-in email stores your address until you use the link. If you don't use
+            it, the address is deleted within half an hour.
+          </li>
+          <li>
+            <strong>Billing:</strong> the Lemon Squeezy subscription id, plan, status and renewal dates.
+            We never see your card details. A hash of each billing notification is kept for 90 days so
+            none is applied twice.
+          </li>
+        </ul>
+
+        <h2>Website statistics</h2>
+        <p>
+          The site uses no cookies for statistics and loads no tracking scripts from other companies.
+          Each page view adds one to a daily count, and when you arrive from another site, that
+          site's host name (for example news.ycombinator.com) is counted too. To count unique
+          visitors, the relay keeps a hash of your IP address and browser name made with a key that
+          changes every day; those hashes are deleted when the day ends. It also counts installs by
+          type, and daily totals of messages, tunnels and sign-ups. To count active users, it notes
+          which machine and agent ids (the random ones above) were used each day, and deletes those
+          notes after 90 days. These are counts, never content.
+        </p>
+
+        <h2>IP addresses</h2>
+        <p>
+          The relay holds IP addresses only in memory, to rate-limit abuse, and never writes them to
+          its database. The web server's access logs record IP addresses, the pages requested and
+          browser names, and are deleted after 14 days.
+        </p>
+
+        <h2>Cookies</h2>
+        <ul>
+          <li><code>tunnel_session</code> keeps you signed in, for 30 days.</li>
+          <li><code>tunnel_signed_in</code> lets pages show "Account" instead of "Sign in", for 30 days.</li>
+          <li><code>tunnel_oauth</code> exists for 10 minutes during a GitHub sign-in.</li>
+          <li>
+            <code>tunnel_login</code> exists for 15 minutes after you ask for a sign-in email, so the
+            link signs in only this browser without a confirm.
+          </li>
+        </ul>
+        <p>There are no advertising or analytics cookies.</p>
+
+        <h2>Who processes your data</h2>
+        <ul>
+          <li><strong>Resend</strong> sends sign-in emails, so it receives your email address.</li>
+          <li><strong>GitHub</strong> handles GitHub sign-in, if you choose it.</li>
+          <li>
+            <strong>Lemon Squeezy</strong> handles payments. Its own privacy policy covers what you give
+            it at checkout.
+          </li>
+          <li><strong>Oracle Cloud</strong> hosts the server.</li>
+        </ul>
+        <p>These companies may process data outside your country.</p>
+
+        <h2>Your choices</h2>
+        <ul>
+          <li>You can use tunnel without an account.</li>
+          <li>You can unlink a machine or sign out at any time from your account page.</li>
+          <li>
+            Email us to get a copy of your account data or to have your account deleted. We answer
+            within 30 days.
+          </li>
+        </ul>
+
+        <h2>Changes</h2>
+        <p>We'll post changes on this page and update the date at the top.</p>
+      </article>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap footer-row">
+        <nav class="footer-links" aria-label="Footer">
+          <a href="https://github.com/dilyorm/tunnel-ai">GitHub</a>
+          <a href="/terms">Terms</a>
+          <a href="/privacy">Privacy</a>
+          <a href="/refund">Refunds</a>
+          <a href="https://dilyor.dev">dilyor.dev</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/legal.ts"></script>
+  </body>
+</html>

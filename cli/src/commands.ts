@@ -21,10 +21,10 @@ import {
   type Received,
 } from './messages.js';
 import { RelayClient } from './relay-client.js';
+import { formatBytes, PLANS } from './relay/plans.js';
 import { Store, type TunnelRecord } from './store.js';
 
 export const DEFAULT_RELAY = 'https://tunnel.dilyor.dev';
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const LONG_POLL_S = 50;
 
 export interface IO {
@@ -34,6 +34,8 @@ export interface IO {
   err(line: string): void;
   signal?: AbortSignal;
   stdin?: () => Promise<string>;
+  /** Open a link in the person's browser. bin.ts only does this on a terminal. */
+  openUrl?(url: string): void;
 }
 
 export interface Flags {
@@ -63,7 +65,7 @@ export interface Ctx extends IO {
 
 const trimSlash = (url: string) => url.replace(/\/+$/, '');
 
-function relayFor(ctx: Ctx): string {
+export function relayFor(ctx: Ctx): string {
   return trimSlash(ctx.flags.relay || ctx.env.TUNNEL_RELAY || ctx.store.config().relay || DEFAULT_RELAY);
 }
 
@@ -75,6 +77,22 @@ async function deviceToken(ctx: Ctx, relay: string): Promise<string> {
   config.devices[relay] = { id: created.deviceId, token: created.deviceToken };
   ctx.store.saveConfig(config);
   return created.deviceToken;
+}
+
+/**
+ * Call the relay as this machine's device, registering one first if needed. A relay that forgot
+ * the device (its data was reset) answers 401; then register again and retry, once.
+ */
+export async function withDevice<T>(ctx: Ctx, relay: string, fn: (client: RelayClient) => Promise<T>): Promise<T> {
+  try {
+    return await fn(new RelayClient(relay, await deviceToken(ctx, relay)));
+  } catch (error) {
+    if ((error as TunnelError & { status?: number }).status !== 401) throw error;
+    const config = ctx.store.config();
+    delete config.devices[relay];
+    ctx.store.saveConfig(config);
+    return fn(new RelayClient(relay, await deviceToken(ctx, relay)));
+  }
 }
 
 function agentKind(env: NodeJS.ProcessEnv): string {
@@ -198,7 +216,7 @@ function seconds(value: string | undefined, fallback: number): number {
   return n;
 }
 
-const sleep = (ms: number, signal?: AbortSignal) =>
+export const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve) => {
     const t = setTimeout(resolve, ms);
     signal?.addEventListener('abort', () => (clearTimeout(t), resolve()), { once: true });
@@ -211,23 +229,11 @@ export async function openCmd(ctx: Ctx, args: string[]) {
   const relay = relayFor(ctx);
   const me = memberName(ctx);
   const key = newKey();
-  const create = async () =>
-    new RelayClient(relay, await deviceToken(ctx, relay)).json<{ tunnelId: string; memberId: string; memberToken: string }>(
-      'POST',
-      '/v1/tunnels',
-      { profile: sealText(key, JSON.stringify({ name: me })) },
-    );
-  let res: Awaited<ReturnType<typeof create>>;
-  try {
-    res = await create();
-  } catch (error) {
-    // The relay forgot this device (e.g. its data was reset): register again, once.
-    if ((error as TunnelError & { status?: number }).status !== 401) throw error;
-    const config = ctx.store.config();
-    delete config.devices[relay];
-    ctx.store.saveConfig(config);
-    res = await create();
-  }
+  const res = await withDevice(ctx, relay, (client) =>
+    client.json<{ tunnelId: string; memberId: string; memberToken: string }>('POST', '/v1/tunnels', {
+      profile: sealText(key, JSON.stringify({ name: me })),
+    }),
+  );
   const rec: TunnelRecord = {
     name,
     id: res.tunnelId,
@@ -325,7 +331,14 @@ export async function sendCmd(ctx: Ctx, args: string[]) {
     } catch {
       throw new UsageError(`Can't read ${p}.`);
     }
-    if (size > MAX_FILE_BYTES) throw new UsageError(`${p} is ${formatSize(size)}. Files can be up to 10 MB.`);
+    // No plan takes more than Pro's limit, so refuse here instead of reading and sealing a huge file.
+    // Below it the relay decides, by the plan of whoever opened the tunnel.
+    if (size > PLANS.pro.fileBytes) {
+      throw new UsageError(
+        `${p} is ${formatSize(size)}. Files can be up to ${formatBytes(PLANS.pro.fileBytes)} on Pro, ` +
+          `${formatBytes(PLANS.plus.fileBytes)} on Plus, ${formatBytes(PLANS.free.fileBytes)} on Free.`,
+      );
+    }
     const data = await readFile(path);
     const up = await api(rec).upload<{ fileId: string }>(tunnelPath(rec, '/files'), seal(key, data));
     files.push({ id: up.fileId, name: basename(path), size: data.length });
@@ -545,6 +558,8 @@ export async function relayCmd(ctx: Ctx) {
     dataDir,
     maxTunnelsPerDevice: Number(ctx.env.TUNNEL_MAX_TUNNELS ?? 0) || 0,
     trustProxy: ctx.env.TUNNEL_TRUST_PROXY === '1',
+    env: ctx.env,
+    log: (line) => ctx.err(line),
   });
   ctx.out(`Relay running on port ${port}. Data in ${dataDir}.`);
   ctx.out(`Agents connect with: --relay http://<this-host>:${port}  (or set TUNNEL_RELAY)`);

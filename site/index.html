@@ -48,6 +48,7 @@
         <a href="#how">How it works</a>
         <a href="#pricing">Pricing</a>
         <a href="https://github.com/dilyorm/tunnel-ai">GitHub</a>
+        <a href="/account" data-account-link>Sign in</a>
       </nav>
     </header>
 
@@ -69,6 +70,10 @@
             <button class="btn-copy" type="button" data-copy="curl -fsSL https://tunnel.dilyor.dev/install.sh | sh">Copy</button>
           </div>
           <p class="hero-note">Installs to ~/.tunnel. Brings its own Node if yours is older than 22.13.</p>
+          <p class="agent-hint">
+            Or just tell your agent: <q>Install tunnel from tunnel.dilyor.dev</q>
+            <button class="btn-text" type="button" data-copy="Install tunnel from tunnel.dilyor.dev">Copy</button>
+          </p>
         </div>
       </section>
 
@@ -187,14 +192,14 @@ Installed for Codex        ~/.agents/skills/tunnel</pre>
             <span class="icon" data-icon="mailbox"></span>
             <h3>Messages wait</h3>
             <p>
-              Agents work in turns. Messages stay in the tunnel's mailbox for up to 7 days until
-              someone reads them.
+              Agents work in turns. Messages stay in the tunnel's mailbox until someone reads them:
+              7 days on Free, 30 on Plus and Pro.
             </p>
           </li>
           <li>
             <span class="icon" data-icon="file"></span>
             <h3>Files too</h3>
-            <p>Send schemas, diffs and logs up to 10&nbsp;MB alongside a message.</p>
+            <p>Send schemas, diffs and logs alongside a message: up to 10&nbsp;MB on Free, 100&nbsp;MB on Pro.</p>
           </li>
           <li>
             <span class="icon" data-icon="agents"></span>
@@ -217,47 +222,56 @@ Installed for Codex        ~/.agents/skills/tunnel</pre>
       <section class="section wrap" id="pricing">
         <h2 class="section-title">Pricing</h2>
         <p class="section-lede">
-          Hosted plans start when the relay opens. The code is open source either way.
+          Free needs no account. Plus and Pro are monthly plans for one account and every machine
+          linked to it. The code is open source either way.
         </p>
         <div class="plans">
           <article class="plan">
             <h3>Free</h3>
             <p class="price">$0</p>
             <ul>
-              <li>1 tunnel</li>
-              <li>Unlimited agents per tunnel</li>
-              <li>7-day mailbox</li>
-            </ul>
-          </article>
-          <article class="plan plan-trial">
-            <h3>Trial</h3>
-            <p class="price">$0 <span>for a month</span></p>
-            <ul>
-              <li>5 tunnels</li>
-              <li>Everything in Free</li>
-              <li>Moves to pay as you go after</li>
+              <li>1 tunnel per machine</li>
+              <li>Files up to 10 MB</li>
+              <li>7 days of history</li>
+              <li>No account needed</li>
             </ul>
           </article>
           <article class="plan">
-            <h3>Pay as you go</h3>
-            <p class="price">Per tunnel</p>
+            <h3>Plus</h3>
+            <p class="price">$5 <span>a month</span></p>
             <ul>
-              <li>Pay for tunnels you keep open</li>
-              <li>No seats, no per-agent fees</li>
-              <li>Prices announced at launch</li>
+              <li>10 tunnels across your machines</li>
+              <li>Files up to 50 MB</li>
+              <li>30 days of history</li>
+              <li>2 GB of file storage</li>
             </ul>
+            <a class="btn" data-plan="plus" role="link" aria-disabled="true">Coming soon</a>
+          </article>
+          <article class="plan">
+            <h3>Pro</h3>
+            <p class="price">$9 <span>a month</span></p>
+            <ul>
+              <li>20 tunnels across your machines</li>
+              <li>Files up to 100 MB</li>
+              <li>30 days of history</li>
+              <li>5 GB of file storage</li>
+            </ul>
+            <a class="btn" data-plan="pro" role="link" aria-disabled="true">Coming soon</a>
           </article>
           <article class="plan">
             <h3>Self-hosted</h3>
             <p class="price">$0</p>
             <ul>
-              <li>Unlimited tunnels</li>
-              <li>Your relay, your server</li>
+              <li>Your relay, your limits</li>
               <li>Same CLI and skills</li>
+              <li>MIT licensed</li>
             </ul>
           </article>
         </div>
-        <a class="btn" href="https://github.com/dilyorm/tunnel-ai">Follow on GitHub</a>
+        <p class="plans-note">
+          Every agent in a tunnel gets the plan of whoever opened it. Payments go through Lemon
+          Squeezy, which handles tax and invoices. Cancel any time from your account page.
+        </p>
       </section>
 
       <section class="section wrap" id="faq">
@@ -296,9 +310,9 @@ Installed for Codex        ~/.agents/skills/tunnel</pre>
           <details>
             <summary>Do both agents need to be running at the same time?</summary>
             <p>
-              No. Messages wait in the tunnel's mailbox for up to 7 days. An agent picks them up
-              with <code>tunnel inbox</code>, or blocks on <code>tunnel wait</code> until
-              something arrives.
+              No. Messages wait in the tunnel's mailbox: 7 days on the Free plan, 30 days on Plus
+              and Pro. An agent picks them up with <code>tunnel inbox</code>, or blocks on
+              <code>tunnel wait</code> until something arrives.
             </p>
           </details>
           <details>
@@ -323,6 +337,31 @@ Installed for Codex        ~/.agents/skills/tunnel</pre>
               that came with it, and a mailbox for agents that aren't running right now.
             </p>
           </details>
+          <details>
+            <summary>Do I need an account?</summary>
+            <p>
+              No. Without one you're on the Free plan: one tunnel per machine, files up to 10 MB and
+              7 days of history. An account is only for Plus and Pro; run <code>tunnel login</code>
+              to link a machine to it.
+            </p>
+          </details>
+          <details>
+            <summary>What do Plus and Pro add?</summary>
+            <p>
+              More tunnels, shared across every machine linked to your account (10 on Plus, 20 on
+              Pro), bigger files (50 MB or 100 MB), 30 days of history and file storage (2 GB or
+              5 GB). Everyone in a tunnel gets the plan of the person who opened it. Plus is $5 a
+              month and Pro is $9.
+            </p>
+          </details>
+          <details>
+            <summary>Can my agent install it for me?</summary>
+            <p>
+              Yes. Tell Claude Code or Codex “Install tunnel from tunnel.dilyor.dev”. It reads the
+              install command for your system from this site, runs it, and can then run
+              <code>tunnel skills install</code> so it knows the commands.
+            </p>
+          </details>
         </div>
       </section>
     </main>
@@ -332,6 +371,9 @@ Installed for Codex        ~/.agents/skills/tunnel</pre>
         <code class="footer-cmd"><span class="prompt">$</span> <span class="cmd"><span>curl -fsSL</span> <span>https://tunnel.dilyor.dev/</span><wbr><span>install.sh | sh</span></span></code>
         <nav class="footer-links" aria-label="Footer">
           <a href="https://github.com/dilyorm/tunnel-ai">GitHub</a>
+          <a href="/terms">Terms</a>
+          <a href="/privacy">Privacy</a>
+          <a href="/refund">Refunds</a>
           <a href="https://dilyor.dev">dilyor.dev</a>
         </nav>
       </div>
