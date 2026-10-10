@@ -36,6 +36,8 @@ export interface RelayOptions {
   log?: (line: string) => void;
   /** How often `tunnel login` polls for approval, in seconds. */
   linkPollSeconds?: number;
+  /** The version sent in x-tunnel-version and /v1/health. Tests set it; a real relay reports its own. */
+  version?: string;
 }
 
 export interface Relay {
@@ -105,6 +107,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   }
 
   const log = options.log ?? ((line: string) => console.log(`[relay] ${line}`));
+  const version = options.version ?? VERSION;
   const features = readFeatures(options.env ?? {}, log);
 
   const app: App = {
@@ -140,7 +143,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
 
   const limit = counter(60_000, LIMITS.requestsPerMinute, 'Too many requests. Slow down and retry in a minute.');
 
-  app.on('GET', '/v1/health', async (_req, res) => send(res, 200, { ok: true, version: VERSION }));
+  app.on('GET', '/v1/health', async (_req, res) => send(res, 200, { ok: true, version }));
   const tunnels = tunnelRoutes(app);
 
   if (features.publicUrl) {
@@ -161,6 +164,8 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
 
   const server = createServer(async (req, res) => {
     try {
+      // Every answer, errors included, says which tunnel version this relay runs. The CLI uses it for the update hint.
+      res.setHeader('x-tunnel-version', version);
       limit(req);
       const target = req.url ?? '/';
       const url = new URL(target, 'http://relay');

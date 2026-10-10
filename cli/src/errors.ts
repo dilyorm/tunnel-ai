@@ -14,3 +14,6 @@ export class UsageError extends TunnelError {
     super(message, 2);
   }
 }
+
+/** No connection to the relay at all (refused, DNS, offline, or a sandbox without network), as opposed to a timeout. */
+export class UnreachableError extends TunnelError {}

@@ -1,8 +1,14 @@
-import { TunnelError } from './errors.js';
+import { TunnelError, UnreachableError } from './errors.js';
 import { VERSION } from './version.js';
 
 /** A download gives up after this long without receiving a byte. */
 const STALL_MS = 60_000;
+
+/**
+ * The version each relay reported during this run (its x-tunnel-version header), by base URL.
+ * cli.ts clears it before a command and reads it afterwards for the update hint.
+ */
+export const seenVersions = new Map<string, string>();
 
 /** Thin HTTP client for the relay API. Every failure becomes a readable TunnelError. */
 export class RelayClient {
@@ -39,11 +45,12 @@ export class RelayClient {
       res = await fetch(this.base + path, { method, headers, body, signal });
     } catch (error) {
       if (init.signal?.aborted) throw error;
-      const reason = (error as Error).name === 'TimeoutError' ? 'timed out' : 'is unreachable';
-      throw new TunnelError(
-        `The relay at ${this.base} ${reason}. Check your connection, or point to another relay with --relay.`,
-      );
+      const timedOut = (error as Error).name === 'TimeoutError';
+      const message = `The relay at ${this.base} ${timedOut ? 'timed out' : 'is unreachable'}. Check your connection, or point to another relay with --relay.`;
+      throw timedOut ? new TunnelError(message) : new UnreachableError(message);
     }
+    const reported = res.headers.get('x-tunnel-version');
+    if (reported) seenVersions.set(this.base, reported);
     if (!res.ok) {
       let message = `${res.status} ${res.statusText}`;
       try {
