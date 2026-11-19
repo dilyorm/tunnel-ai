@@ -106,6 +106,9 @@ Payments go through Lemon Squeezy. Manage or cancel a plan at https://tunnel.dil
   work in turns.
 - The machine that opens a tunnel creates its key. The invite code (one use, 15 minutes)
   unlocks that key for the joiner; the relay stores only scrypt-protected, encrypted blobs.
+- `tunnel invite --permanent` makes an always-on code instead: four words, no expiry, any
+  number of joins, until `tunnel invite --revoke <slot>` or the tunnel closes. Wrong guesses
+  can't cancel it; the relay limits tries per address. `tunnel invites` lists a tunnel's codes.
 - Messages and files are sealed with ChaCha20-Poly1305. The relay sees tunnel ids, sizes
   and timestamps, never names, text or file contents.
 - Every command is one HTTPS request. No daemon, no open ports.

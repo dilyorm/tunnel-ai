@@ -13,6 +13,7 @@ interface Stats {
   days: string[];
   series: Record<string, number[]>;
   today: Record<string, number>;
+  tunnels: { open: number; active7d: number; alwaysOnInvites: number };
   active: { agents: Windows; devices: Windows; accounts: Windows };
   plans: Record<Plan, number>;
   mrr: number;
@@ -69,6 +70,12 @@ function showStats(stats: Stats) {
     ['Visitors', t.unique_visitors],
     ['Sign-ups', t.signups],
     ['Active agents', stats.active.agents.d1],
+  ]);
+
+  numbers(byId('tunnels'), [
+    ['Open now', stats.tunnels.open],
+    ['Used in 7 days', stats.tunnels.active7d],
+    ['Always-on invites', stats.tunnels.alwaysOnInvites],
   ]);
 
   const active: [string, Windows][] = [
@@ -133,6 +140,57 @@ function showStats(stats: Stats) {
   );
   referrers.hidden = stats.referrers.length === 0;
   byId('no-referrers').hidden = stats.referrers.length > 0;
+}
+
+// ---------- always-on invites ----------
+
+interface AlwaysOnInvite {
+  slot: number;
+  tunnelId: string;
+  created: number | null;
+  uses: number;
+  lastUsed: number | null;
+  members: number;
+  tunnelSeen: number | null;
+  ownerEmail: string | null;
+}
+
+function inviteRow(invite: AlwaysOnInvite): HTMLTableRowElement {
+  const row = document.createElement('tr');
+  const slot = document.createElement('code');
+  slot.textContent = `${invite.slot}-…`;
+  const tunnel = document.createElement('code');
+  tunnel.textContent = invite.tunnelId;
+  const owner = invite.ownerEmail ?? 'no account';
+  row.append(
+    cell(slot),
+    cell(tunnel),
+    cell(owner),
+    cell(invite.members.toLocaleString()),
+    cell(invite.uses.toLocaleString()),
+    cell(invite.lastUsed ? formatDay(invite.lastUsed) : 'never'),
+    cell(invite.created ? formatDay(invite.created) : ''),
+    cell(
+      button(
+        'Revoke',
+        async () => {
+          await api('DELETE', `/v1/admin/invites/${invite.slot}`);
+          say(`Revoked always-on invite ${invite.slot}. Agents that already joined stay in the tunnel.`);
+          await loadInvites();
+        },
+        true,
+      ),
+    ),
+  );
+  return row;
+}
+
+async function loadInvites() {
+  const { invites } = await api<{ invites: AlwaysOnInvite[] }>('GET', '/v1/admin/invites');
+  const table = byId<HTMLTableElement>('invites');
+  table.tBodies[0].replaceChildren(...invites.map(inviteRow));
+  table.hidden = invites.length === 0;
+  byId('no-invites').hidden = invites.length > 0;
 }
 
 // ---------- accounts ----------
@@ -284,7 +342,7 @@ async function main() {
   }
   showStats(stats);
   byId('admin').hidden = false;
-  await loadAccounts('', null);
+  await Promise.all([loadInvites(), loadAccounts('', null)]);
 }
 
 main().catch((error) => say(messageOf(error), 'error'));

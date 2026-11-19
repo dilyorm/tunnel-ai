@@ -4,13 +4,15 @@ import { WORDS } from './wordlist.js';
 
 // Invite code: <slot>-<word>-<word>-<word>, e.g. 7-orange-fox-tide.
 // The slot tells the relay which invite to look up. The words are the secret (~33 bits).
+// An always-on invite never expires and a wrong guess can't cancel it, so it gets a fourth word (~44 bits).
 
 export const CODE_WORDS = 3;
+export const PERMANENT_CODE_WORDS = 4;
 
 const KNOWN = new Set(WORDS);
 
-export function randomSecret(): string {
-  return Array.from({ length: CODE_WORDS }, () => WORDS[randomInt(WORDS.length)]).join('-');
+export function randomSecret(words = CODE_WORDS): string {
+  return Array.from({ length: words }, () => WORDS[randomInt(WORDS.length)]).join('-');
 }
 
 export const formatCode = (slot: number, secret: string) => `${slot}-${secret}`;
@@ -23,7 +25,7 @@ export interface ParsedCode {
 export function parseCode(input: string): ParsedCode {
   const parts = input.trim().toLowerCase().split(/[\s-]+/).filter(Boolean);
   const [slot, ...words] = parts;
-  if (!slot || !/^\d{1,5}$/.test(slot) || words.length !== CODE_WORDS) {
+  if (!slot || !/^\d{1,5}$/.test(slot) || (words.length !== CODE_WORDS && words.length !== PERMANENT_CODE_WORDS)) {
     throw new UsageError(`"${input}" is not an invite code. Codes look like 7-orange-fox-tide.`);
   }
   const unknown = words.find((w) => !KNOWN.has(w));

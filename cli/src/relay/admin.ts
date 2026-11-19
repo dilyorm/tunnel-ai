@@ -35,6 +35,17 @@ interface AccountRow {
   tunnels: number;
 }
 
+interface InviteRow {
+  slot: number;
+  tunnel_id: string;
+  created: number | null;
+  uses: number;
+  last_used: number | null;
+  members: number;
+  tunnel_seen: number | null;
+  owner_email: string | null;
+}
+
 export function adminRoutes(app: App, accounts: Accounts, recompute: Recompute) {
   const { store } = app;
   const s = {
@@ -72,6 +83,28 @@ export function adminRoutes(app: App, accounts: Accounts, recompute: Recompute) 
         ORDER BY a.created DESC, a.id
         LIMIT ${PAGE + 1} OFFSET ?3`,
     ),
+    tunnels: store.prepare<{ open: number; active: number; permanent: number }>(
+      `SELECT (SELECT COUNT(*) FROM tunnels) AS open,
+              (SELECT COUNT(DISTINCT tunnel_id) FROM members WHERE seen >= ?) AS active,
+              (SELECT COUNT(*) FROM invites WHERE permanent = 1) AS permanent`,
+    ),
+    // Every always-on invite on the relay, with who owns its tunnel. The relay never sees the words.
+    invites: store.prepare<InviteRow>(
+      `SELECT i.slot, i.tunnel_id, i.created, i.uses, i.last_used,
+              (SELECT COUNT(*) FROM members m WHERE m.tunnel_id = i.tunnel_id) AS members,
+              (SELECT MAX(m.seen) FROM members m WHERE m.tunnel_id = i.tunnel_id) AS tunnel_seen,
+              a.email AS owner_email
+         FROM invites i
+         JOIN tunnels t ON t.id = i.tunnel_id
+         LEFT JOIN devices d ON d.id = t.owner_device
+         LEFT JOIN accounts a ON a.id = d.account_id
+        WHERE i.permanent = 1
+        ORDER BY i.created DESC, i.slot`,
+    ),
+    permanentInvite: store.prepare<{ slot: number; tunnel_id: string }>(
+      'SELECT slot, tunnel_id FROM invites WHERE slot = ? AND permanent = 1',
+    ),
+    deleteInvite: store.prepare('DELETE FROM invites WHERE slot = ?'),
     grant: store.prepare("UPDATE accounts SET plan = ?, plan_source = 'admin', plan_until = ? WHERE id = ?"),
     clearGrant: store.prepare(
       "UPDATE accounts SET plan_source = NULL, plan_until = NULL WHERE id = ? AND plan_source = 'admin'",
@@ -115,10 +148,13 @@ export function adminRoutes(app: App, accounts: Accounts, recompute: Recompute) 
     let mrr = 0;
     for (const row of s.paying.all()) if (row.plan === 'plus' || row.plan === 'pro') mrr += PRICES[row.plan] * row.n;
 
+    const tunnels = s.tunnels.get(now - 7 * DAY)!;
+
     send(res, 200, {
       days,
       series,
       today,
+      tunnels: { open: tunnels.open, active7d: tunnels.active, alwaysOnInvites: tunnels.permanent },
       active: {
         agents: windows((since) => s.agents.get(since)?.n ?? 0),
         devices: windows((since) => s.devices.get(since)?.n ?? 0),
@@ -153,6 +189,32 @@ export function adminRoutes(app: App, accounts: Accounts, recompute: Recompute) 
       })),
       next: rows.length > PAGE ? String(offset + PAGE) : null,
     });
+  });
+
+  app.on('GET', '/v1/admin/invites', async (req, res) => {
+    requireAdmin(req);
+    send(res, 200, {
+      invites: s.invites.all().map((row) => ({
+        slot: row.slot,
+        tunnelId: row.tunnel_id,
+        created: row.created,
+        uses: row.uses,
+        lastUsed: row.last_used,
+        members: row.members,
+        tunnelSeen: row.tunnel_seen,
+        ownerEmail: row.owner_email,
+      })),
+    });
+  });
+
+  app.on('DELETE', '/v1/admin/invites/:slot', async (req, res, [slot]) => {
+    const admin = requireAdmin(req);
+    accounts.requireOrigin(req);
+    const invite = s.permanentInvite.get(Number(slot));
+    if (!invite) throw new HttpError(404, 'No always-on invite with that slot.');
+    s.deleteInvite.run(invite.slot);
+    app.log(`Admin ${admin.id} revoked always-on invite ${invite.slot} of tunnel ${invite.tunnel_id}.`);
+    send(res, 204);
   });
 
   app.on('POST', '/v1/admin/accounts/:id/plan', async (req, res, [id]) => {

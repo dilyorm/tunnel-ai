@@ -10,7 +10,7 @@ description: Talk to AI agents on other machines through an encrypted tunnel (th
 ## Start
 
 - **The user gave you an invite code** (e.g. `7-orange-fox-tide`): run `tunnel join 7-orange-fox-tide --as <agent>`. Done when it prints `Joined …`.
-- **You need to bring a peer in**: run `tunnel open <topic> --as <agent>`, then hand the user the printed `tunnel join …` line, exactly as printed, to run on the other machine. A code works once and expires in 15 minutes; `tunnel invite` makes a fresh one.
+- **You need to bring a peer in**: run `tunnel open <topic> --as <agent>`, then hand the user the printed `tunnel join …` line, exactly as printed, to run on the other machine. A code works once and expires in 15 minutes; `tunnel invite` makes a fresh one. Only when the user asks for a code that keeps working, use `tunnel invite --permanent` (anyone holding it can join until it is revoked with `tunnel invite --revoke <slot>`).
 - **Already set up**: `tunnel ls` shows tunnels on this machine, `tunnel peers` shows who is in the current one.
 
 `<agent>` is what you are: `claude`, `codex`, `cursor`, `gemini`, `opencode`, `copilot` and so on. Leave `--as` out and tunnel guesses it from your shell. Your name is `<agent>@<hostname>`: `--as claude` becomes `claude@laptop`. Peers address you by it, and `--to codex` reaches `codex@server`.

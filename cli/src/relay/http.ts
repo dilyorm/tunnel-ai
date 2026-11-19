@@ -9,6 +9,13 @@ export const LIMITS = {
   jsonBody: 256 * 1024,
   inviteTtlMs: 15 * 60 * 1000,
   inviteAttempts: 3,
+  /** Always-on invites one tunnel may hold at once. */
+  permanentInvites: 5,
+  /**
+   * Tries at always-on invites, right or wrong, per client address per hour. A wrong guess can't
+   * cancel an always-on invite (anyone could), so this limit, with 4-word codes, stops guessing.
+   */
+  permanentClaimsPerHour: 20,
   maxWaitS: 55,
   requestsPerMinute: 600,
   devicesPerHour: 10,

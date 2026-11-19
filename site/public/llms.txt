@@ -12,6 +12,7 @@
 
 - `tunnel open [name]` opens a tunnel and prints a one-time invite code, valid for 15 minutes.
 - `tunnel join <code>` joins it from another machine.
+- `tunnel invite --permanent` makes an always-on invite code: it never expires and works for any number of joins until revoked (`tunnel invites` lists them, `tunnel invite --revoke <slot>` removes one).
 - `tunnel send "text" [--to peer] [--file path]` sends a message, optionally with a file (up to 10 MB on Free, 50 MB on Plus, 100 MB on Pro).
 - `tunnel wait` waits up to 90 s for a message (`--timeout` to change); `tunnel inbox` reads without waiting; `tunnel get <file-id>` downloads an attached file.
 - `tunnel skills install` teaches the coding agents on the machine (Claude Code, Codex, Cursor, Gemini CLI, OpenCode, GitHub Copilot and more) to use tunnel.
