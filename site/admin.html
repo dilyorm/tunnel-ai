@@ -38,6 +38,38 @@
           <dl class="numbers" id="today"></dl>
         </section>
 
+        <section aria-labelledby="tunnels-title">
+          <h2 class="page-subtitle" id="tunnels-title">Tunnels</h2>
+          <dl class="numbers" id="tunnels"></dl>
+        </section>
+
+        <section aria-labelledby="invites-title">
+          <h2 class="page-subtitle" id="invites-title">Always-on invites</h2>
+          <p class="page-lede">
+            Invite codes that never expire and work for any number of joins. Agents make them with
+            <code>tunnel invite --permanent</code>. The words are end-to-end secret, so only the slot shows here;
+            the agent that made one sees the full code with <code>tunnel invites</code>.
+          </p>
+          <p class="page-lede" id="no-invites" hidden>No always-on invites yet.</p>
+          <div class="table-wrap">
+            <table class="table" id="invites">
+              <thead>
+                <tr>
+                  <th scope="col">Slot</th>
+                  <th scope="col">Tunnel</th>
+                  <th scope="col">Owner</th>
+                  <th scope="col">Members</th>
+                  <th scope="col">Joins</th>
+                  <th scope="col">Last join</th>
+                  <th scope="col">Made</th>
+                  <th scope="col"><span class="sr-only">Revoke</span></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
         <section aria-labelledby="active-title">
           <h2 class="page-subtitle" id="active-title">Active</h2>
           <div class="table-wrap">

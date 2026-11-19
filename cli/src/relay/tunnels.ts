@@ -6,7 +6,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { secretToken, sha256, shortId } from '../crypto.js';
-import type { Member } from './db.js';
+import { NEVER, type Member } from './db.js';
 import { HttpError, LIMITS, bearer, json, send, str } from './http.js';
 import type { App } from './server.js';
 
@@ -48,6 +48,12 @@ export function tunnelRoutes(app: App) {
     60 * 60_000,
     LIMITS.devicesPerHour,
     'Too many new devices from this address. Try again in an hour.',
+  );
+
+  const limitPermanentClaims = app.counter(
+    60 * 60_000,
+    LIMITS.permanentClaimsPerHour,
+    'Too many tries at always-on invite codes from this address. Try again in an hour.',
   );
 
   // ---------- helpers ----------
@@ -151,15 +157,48 @@ export function tunnelRoutes(app: App) {
   });
 
   app.on('POST', '/v1/tunnels/:tid/invites', async (req, res, [tid]) => {
-    member(req, tid);
-    const input = await json<{ salt?: string; wrapped?: string; verifierHash?: string }>(req);
+    const me = member(req, tid);
+    const input = await json<{ salt?: string; wrapped?: string; verifierHash?: string; permanent?: unknown }>(req);
     const salt = str(input.salt, 'salt', 64);
     const wrapped = str(input.wrapped, 'wrapped', 4096);
     const verifierHash = str(input.verifierHash, 'verifierHash', 128);
+    const permanent = input.permanent === true;
+    if (permanent && (store.countPermanentInvites.get(tid)?.n ?? 0) >= LIMITS.permanentInvites) {
+      throw new HttpError(
+        403,
+        `This tunnel already has ${LIMITS.permanentInvites} always-on invites. ` +
+          'Revoke one first: `tunnel invites` lists them, `tunnel invite --revoke <slot>` removes one.',
+      );
+    }
     const slot = freeSlot();
-    const expires = Date.now() + LIMITS.inviteTtlMs;
-    store.insertInvite.run(slot, tid, salt, wrapped, verifierHash, expires);
-    send(res, 201, { slot, expiresAt: expires });
+    const now = Date.now();
+    const expires = permanent ? NEVER : now + LIMITS.inviteTtlMs;
+    store.insertInvite.run(slot, tid, salt, wrapped, verifierHash, expires, permanent ? 1 : 0, me.id, now);
+    send(res, 201, { slot, expiresAt: permanent ? null : expires, permanent });
+  });
+
+  app.on('GET', '/v1/tunnels/:tid/invites', async (req, res, [tid]) => {
+    const me = member(req, tid);
+    const invites = store.permanentInvites.all(tid).map((i) => ({
+      slot: i.slot,
+      created: i.created,
+      uses: i.uses,
+      lastUsed: i.last_used,
+      mine: i.member_id === me.id,
+    }));
+    send(res, 200, { invites });
+  });
+
+  app.on('DELETE', '/v1/tunnels/:tid/invites/:slot', async (req, res, [tid, slot]) => {
+    const me = member(req, tid);
+    const invite = store.invite.get(Number(slot), Date.now());
+    if (!invite || invite.tunnel_id !== tid) throw new HttpError(404, 'This tunnel has no invite with that slot.');
+    const tunnel = store.tunnel.get(tid);
+    if (invite.member_id !== me.id && tunnel?.owner_member !== me.id) {
+      throw new HttpError(403, 'Only the agent that made this invite, or the one that opened the tunnel, can revoke it.');
+    }
+    store.deleteInvite.run(invite.slot);
+    send(res, 204);
   });
 
   app.on('GET', '/v1/invites/:slot', async (_req, res, [slot]) => {
@@ -173,7 +212,11 @@ export function tunnelRoutes(app: App) {
     const verifier = str(input.verifier, 'verifier', 128);
     const invite = store.invite.get(Number(slot), Date.now());
     if (!invite) throw new HttpError(404, 'That invite code has expired or was already used.');
+    // Every try counts, so the limit is reached before a guess is checked, not after.
+    if (invite.permanent) limitPermanentClaims(req);
     if (sha256(verifier) !== invite.verifier_hash) {
+      // Anyone can see which slots are taken, so a wrong guess must not be able to cancel an always-on invite.
+      if (invite.permanent) throw new HttpError(403, 'Wrong invite code. Check the words and try again.');
       const attempts = store.failInvite.get(invite.slot)?.attempts ?? LIMITS.inviteAttempts;
       if (attempts >= LIMITS.inviteAttempts) {
         store.deleteInvite.run(invite.slot);
@@ -181,8 +224,9 @@ export function tunnelRoutes(app: App) {
       }
       throw new HttpError(403, 'Wrong invite code. Check the words and try again.');
     }
-    store.deleteInvite.run(invite.slot);
     const now = Date.now();
+    if (invite.permanent) store.useInvite.run(now, invite.slot);
+    else store.deleteInvite.run(invite.slot);
     const memberId = shortId('m', 12);
     const token = secretToken();
     store.insertMember.run(memberId, invite.tunnel_id, sha256(token), null, now, now);

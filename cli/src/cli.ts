@@ -16,7 +16,10 @@ export const HELP = `tunnel ${VERSION} - an end-to-end encrypted tunnel between 
 Start or join
   tunnel open [name] [--as name]      Open a tunnel and print a one-time invite code
   tunnel join <code> [--as name]      Join with a code, e.g. tunnel join 7-orange-fox-tide
-  tunnel invite                       New invite code for the current tunnel
+  tunnel invite                       New one-time invite code for the current tunnel
+  tunnel invite --permanent           Always-on invite: never expires, works for any number of joins
+  tunnel invites                      List the tunnel's always-on invites
+  tunnel invite --revoke <slot>       Revoke an always-on invite
 
 Talk
   tunnel send "text" [--to name] [--file path]...   Send a message, with files up to your plan's size limit
@@ -58,6 +61,7 @@ const COMMANDS: Record<string, (ctx: Ctx, args: string[]) => Promise<void>> = {
   open: commands.openCmd,
   join: commands.joinCmd,
   invite: commands.inviteCmd,
+  invites: commands.invitesCmd,
   send: commands.sendCmd,
   inbox: commands.inboxCmd,
   wait: commands.waitCmd,
@@ -127,6 +131,8 @@ export async function run(argv: string[], io: IO): Promise<number> {
         all: { type: 'boolean' },
         refresh: { type: 'boolean' },
         force: { type: 'boolean' },
+        permanent: { type: 'boolean' },
+        revoke: { type: 'string' },
         help: { type: 'boolean', short: 'h' },
         version: { type: 'boolean', short: 'v' },
       },

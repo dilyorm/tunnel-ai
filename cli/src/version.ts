@@ -1,4 +1,4 @@
-export const VERSION = '0.2.0';
+export const VERSION = '0.3.0';
 
 /** True when `a` is a later x.y.z release than `b`. Anything that isn't plain x.y.z is never newer. */
 export function isNewer(a: string, b: string): boolean {

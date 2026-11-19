@@ -20,6 +20,8 @@ export interface TunnelRecord {
   cursor: number;
   /** Files seen in messages, so `tunnel get <id>` knows their names. */
   files: Record<string, { name: string; size: number }>;
+  /** Always-on invite codes made on this machine, by slot, so `tunnel invites` can show them again. */
+  invites?: Record<string, string>;
 }
 
 export interface Config {

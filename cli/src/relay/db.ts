@@ -150,6 +150,12 @@ const COLUMNS: [table: string, column: string, type: string][] = [
   ['devices', 'seen', 'INTEGER'],
   ['messages', 'expires', 'INTEGER'],
   ['files', 'expires', 'INTEGER'],
+  // Always-on invites: never expire, any number of joins, until revoked or their tunnel closes.
+  ['invites', 'permanent', 'INTEGER NOT NULL DEFAULT 0'],
+  ['invites', 'member_id', 'TEXT'],
+  ['invites', 'created', 'INTEGER'],
+  ['invites', 'uses', 'INTEGER NOT NULL DEFAULT 0'],
+  ['invites', 'last_used', 'INTEGER'],
 ];
 
 // Rows from before plan-aware expiry keep the old fixed 7 days.
@@ -160,7 +166,11 @@ CREATE INDEX IF NOT EXISTS messages_expires ON messages(expires);
 CREATE INDEX IF NOT EXISTS files_expires ON files(expires);
 CREATE INDEX IF NOT EXISTS files_tunnel ON files(tunnel_id);
 CREATE INDEX IF NOT EXISTS devices_account ON devices(account_id);
+CREATE INDEX IF NOT EXISTS invites_tunnel ON invites(tunnel_id);
 `;
+
+/** The expiry stored for an always-on invite: the last moment a JS Date can name. */
+export const NEVER = 8.64e15;
 
 export interface Device {
   id: string;
@@ -203,6 +213,19 @@ export interface Invite {
   verifier_hash: string;
   attempts: number;
   expires: number;
+  permanent: number;
+  member_id: string | null;
+  created: number | null;
+  uses: number;
+  last_used: number | null;
+}
+
+export interface PermanentInvite {
+  slot: number;
+  member_id: string | null;
+  created: number | null;
+  uses: number;
+  last_used: number | null;
 }
 
 export interface MessageRow {
@@ -271,8 +294,14 @@ export async function openStore(dataDir: string) {
     invite: q<Invite>('SELECT * FROM invites WHERE slot = ? AND expires > ?'),
     usedSlots: q<{ slot: number }>('SELECT slot FROM invites'),
     insertInvite: q(
-      'INSERT INTO invites (slot, tunnel_id, salt, wrapped, verifier_hash, attempts, expires) VALUES (?, ?, ?, ?, ?, 0, ?)',
+      `INSERT INTO invites (slot, tunnel_id, salt, wrapped, verifier_hash, attempts, expires, permanent, member_id, created)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
     ),
+    permanentInvites: q<PermanentInvite>(
+      'SELECT slot, member_id, created, uses, last_used FROM invites WHERE tunnel_id = ? AND permanent = 1 ORDER BY created, slot',
+    ),
+    countPermanentInvites: q<{ n: number }>('SELECT COUNT(*) AS n FROM invites WHERE tunnel_id = ? AND permanent = 1'),
+    useInvite: q('UPDATE invites SET uses = uses + 1, last_used = ? WHERE slot = ?'),
     failInvite: q<{ attempts: number }>(
       'UPDATE invites SET attempts = attempts + 1 WHERE slot = ? RETURNING attempts',
     ),

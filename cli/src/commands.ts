@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { hostname, userInfo } from 'node:os';
 import { basename, dirname, extname, resolve } from 'node:path';
-import { formatCode, parseCode, randomSecret } from './codes.js';
+import { PERMANENT_CODE_WORDS, formatCode, parseCode, randomSecret } from './codes.js';
 import { b64, deriveInviteKeys, newKey, open, openText, seal, sealText, sha256, unb64 } from './crypto.js';
 import { CODEX_NETWORK_HINT, TunnelError, UnreachableError, UsageError } from './errors.js';
 import {
@@ -63,6 +63,8 @@ export interface Flags {
   all?: boolean;
   refresh?: boolean;
   force?: boolean;
+  permanent?: boolean;
+  revoke?: string;
 }
 
 export interface Ctx extends IO {
@@ -184,22 +186,39 @@ async function peers(rec: TunnelRecord): Promise<Peer[]> {
   });
 }
 
-async function createInvite(rec: TunnelRecord) {
-  const secret = randomSecret();
+async function createInvite(rec: TunnelRecord, permanent = false) {
+  const secret = randomSecret(permanent ? PERMANENT_CODE_WORDS : undefined);
   const salt = randomBytes(16);
   const { wrapKey, verifier } = deriveInviteKeys(secret, salt);
   const payload = JSON.stringify({ v: 1, tunnelId: rec.id, name: rec.name, key: rec.key });
-  const res = await api(rec).json<{ slot: number; expiresAt: number }>('POST', tunnelPath(rec, '/invites'), {
-    salt: b64(salt),
-    wrapped: b64(seal(wrapKey, Buffer.from(payload, 'utf8'))),
-    verifierHash: sha256(verifier),
-  });
-  return { code: formatCode(res.slot, secret), expiresAt: res.expiresAt };
+  const res = await api(rec).json<{ slot: number; expiresAt: number | null; permanent?: boolean }>(
+    'POST',
+    tunnelPath(rec, '/invites'),
+    {
+      salt: b64(salt),
+      wrapped: b64(seal(wrapKey, Buffer.from(payload, 'utf8'))),
+      verifierHash: sha256(verifier),
+      ...(permanent ? { permanent: true } : {}),
+    },
+  );
+  // An older relay ignores `permanent` and makes a one-time invite, which runs out by itself in 15 minutes.
+  if (permanent && res.permanent !== true) {
+    throw new TunnelError(
+      'This relay has no always-on invites yet, so it made a one-time invite instead. ' +
+        'Update the relay, or use `tunnel invite` for a one-time code.',
+    );
+  }
+  return { code: formatCode(res.slot, secret), slot: res.slot, expiresAt: res.expiresAt };
 }
 
-function printInvite(ctx: Ctx, rec: TunnelRecord, code: string) {
+function printInvite(ctx: Ctx, rec: TunnelRecord, code: string, permanent = false) {
   ctx.out(`Invite code: ${code}`);
-  ctx.out('Works once. Expires in 15 minutes.');
+  ctx.out(
+    permanent
+      ? 'Always on: never expires and works for any number of joins, until revoked or the tunnel is closed.' +
+          ' Anyone with this code can join and read the tunnel, so share it only with people you trust.'
+      : 'Works once. Expires in 15 minutes.',
+  );
   ctx.out(`On the other machine: ${joinHint(rec, code)}`);
 }
 
@@ -285,12 +304,70 @@ export async function openCmd(ctx: Ctx, args: string[]) {
 
 export async function inviteCmd(ctx: Ctx) {
   const rec = ctx.store.tunnel(ctx.flags.tunnel);
-  const invite = await createInvite(rec);
+  if (ctx.flags.revoke !== undefined) return revokeInvite(ctx, rec, ctx.flags.revoke);
+  const permanent = ctx.flags.permanent === true;
+  const invite = await createInvite(rec, permanent);
+  if (permanent) {
+    rec.invites = { ...rec.invites, [invite.slot]: invite.code };
+    ctx.store.saveTunnel(rec);
+  }
   if (ctx.flags.json) {
-    ctx.out(JSON.stringify({ tunnel: rec.name, code: invite.code, expiresAt: invite.expiresAt, join: joinHint(rec, invite.code) }));
+    ctx.out(
+      JSON.stringify({
+        tunnel: rec.name,
+        code: invite.code,
+        expiresAt: invite.expiresAt,
+        permanent,
+        join: joinHint(rec, invite.code),
+      }),
+    );
     return;
   }
-  printInvite(ctx, rec, invite.code);
+  printInvite(ctx, rec, invite.code, permanent);
+}
+
+async function revokeInvite(ctx: Ctx, rec: TunnelRecord, value: string) {
+  // Take the slot alone, or a whole code: 12 or 12-orange-fox-tide-moon.
+  const slot = /^\s*(\d{1,5})(?:[\s-]|$)/.exec(value)?.[1];
+  if (!slot) throw new UsageError(`--revoke takes the invite's slot, the number at the start of the code. Got "${value}".`);
+  await api(rec).json('DELETE', tunnelPath(rec, `/invites/${slot}`));
+  if (rec.invites?.[slot]) {
+    delete rec.invites[slot];
+    ctx.store.saveTunnel(rec);
+  }
+  if (ctx.flags.json) ctx.out(JSON.stringify({ tunnel: rec.name, revoked: Number(slot) }));
+  else ctx.out(`Revoked always-on invite ${slot}. Agents that already joined with it stay in the tunnel.`);
+}
+
+export async function invitesCmd(ctx: Ctx) {
+  const rec = ctx.store.tunnel(ctx.flags.tunnel);
+  const res = await api(rec).json<{
+    invites: { slot: number; created: number | null; uses: number; lastUsed: number | null; mine: boolean }[];
+  }>('GET', tunnelPath(rec, '/invites'));
+  // Forget codes the relay no longer has (revoked from another machine or by the admin).
+  const live = new Set(res.invites.map((i) => String(i.slot)));
+  const local = rec.invites ?? {};
+  if (Object.keys(local).some((slot) => !live.has(slot))) {
+    rec.invites = Object.fromEntries(Object.entries(local).filter(([slot]) => live.has(slot)));
+    ctx.store.saveTunnel(rec);
+  }
+  const rows = res.invites.map((i) => ({ ...i, code: rec.invites?.[String(i.slot)] ?? null }));
+  if (ctx.flags.json) {
+    ctx.out(JSON.stringify({ tunnel: rec.name, invites: rows }));
+    return;
+  }
+  if (rows.length === 0) {
+    ctx.out(`Tunnel ${rec.name} has no always-on invites. Make one with \`tunnel invite --permanent\`.`);
+    return;
+  }
+  ctx.out(`Always-on invites for ${rec.name}:`);
+  for (const row of rows) {
+    const code = row.code ?? `${row.slot}-…  (made on another machine, so the words are not stored here)`;
+    const used = row.uses === 0 ? 'not used yet' : row.uses === 1 ? 'used once' : `used ${row.uses} times`;
+    const last = row.lastUsed ? `, last ${new Date(row.lastUsed).toISOString().slice(0, 10)}` : '';
+    ctx.out(`  ${code}   ${used}${last}`);
+  }
+  ctx.out('Revoke one with `tunnel invite --revoke <slot>`.');
 }
 
 export async function joinCmd(ctx: Ctx, args: string[]) {

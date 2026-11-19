@@ -9,8 +9,8 @@ import { isNewer, VERSION } from '../src/version.js';
 import { relay, tmp } from './helpers.js';
 
 describe('versions', () => {
-  test('the version is 0.2.0 in the code and in package.json', () => {
-    assert.equal(VERSION, '0.2.0');
+  test('the version is 0.3.0 in the code and in package.json', () => {
+    assert.equal(VERSION, '0.3.0');
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
     assert.equal(pkg.version, VERSION);
   });
