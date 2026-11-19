@@ -301,6 +301,7 @@ export async function openStore(dataDir: string) {
       'SELECT slot, member_id, created, uses, last_used FROM invites WHERE tunnel_id = ? AND permanent = 1 ORDER BY created, slot',
     ),
     countPermanentInvites: q<{ n: number }>('SELECT COUNT(*) AS n FROM invites WHERE tunnel_id = ? AND permanent = 1'),
+    deleteMemberInvites: q('DELETE FROM invites WHERE member_id = ? AND permanent = 1'),
     useInvite: q('UPDATE invites SET uses = uses + 1, last_used = ? WHERE slot = ?'),
     failInvite: q<{ attempts: number }>(
       'UPDATE invites SET attempts = attempts + 1 WHERE slot = ? RETURNING attempts',
