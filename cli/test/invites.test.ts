@@ -103,6 +103,18 @@ describe('always-on invite codes', () => {
     assert.match((await owner.run('invite', '--revoke', 'abc')).err, /takes the invite's slot/);
   });
 
+  test("leaving revokes the always-on invites you made, not other people's", async () => {
+    const owner = agent(() => r, 'lv-owner');
+    const opened = await owner.run('open', 'lv');
+    const guest = agent(() => r, 'lv-guest');
+    assert.equal((await guest.run('join', codeOf(opened.out))).code, 0);
+    const ownerCode = codeOf((await owner.run('invite', '--permanent')).out);
+    const guestCode = codeOf((await guest.run('invite', '--permanent')).out);
+    assert.equal((await guest.run('leave')).code, 0);
+    assert.match((await agent(() => r, 'lv-late').run('join', guestCode)).err, /expired or was already used/);
+    assert.equal((await agent(() => r, 'lv-ok').run('join', ownerCode)).code, 0);
+  });
+
   test('a tunnel holds at most a few, and closing the tunnel removes them', async () => {
     const owner = agent(() => r, 'cap-owner');
     await owner.run('open', 'cap');

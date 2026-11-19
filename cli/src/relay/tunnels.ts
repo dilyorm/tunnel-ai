@@ -256,6 +256,8 @@ export function tunnelRoutes(app: App) {
 
   app.on('DELETE', '/v1/tunnels/:tid/members/me', async (req, res, [tid]) => {
     const me = member(req, tid);
+    // An agent that leaves must not keep a way back in: its always-on invites go with it.
+    store.deleteMemberInvites.run(me.id);
     store.deleteMember.run(me.id);
     if ((store.countMembers.get(tid)?.n ?? 0) === 0) await removeTunnel(tid);
     send(res, 204);
